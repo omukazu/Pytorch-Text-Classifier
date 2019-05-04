@@ -10,7 +10,7 @@ from utils import loss_function, accuracy, f_measure, load_tester
 
 def main():
     # Testing setting
-    parser = ArgumentParser(description='train a classifier', formatter_class=RawTextHelpFormatter)
+    parser = ArgumentParser(description='test a classifier', formatter_class=RawTextHelpFormatter)
     parser.add_argument('CONFIG', default=None, type=str,
                         help='path to config file')
     parser.add_argument('--gpu', '-g', default=None, type=str,
@@ -32,11 +32,11 @@ def main():
         total_f_score = 0
         num_iter = 0
         for batch_idx, (source, mask, target) in tqdm(enumerate(test_data_loader)):
-            source = source.to(device)  # (b, len, dim)
-            mask = mask.to(device)  # (b, len)
-            target = target.to(device)  # (b)
+            source = source.to(device)
+            mask = mask.to(device)
+            target = target.to(device)
 
-            output = model(source, mask)  # (b, 2)
+            output = model(source, mask)
 
             total_loss += loss_function(output, target)
             total_correct += accuracy(output, target)

@@ -57,6 +57,7 @@ class LSTM(nn.Module):
         self.w_1 = nn.Linear(d_hidden * 2, d_hidden)
         self.tanh = nn.Tanh()
         self.w_2 = nn.Linear(d_hidden, n_class)
+        self.dropout = nn.Dropout(p=dropout_rate)
 
         self.params = {'BiDirectional': bi_directional,
                        'DropoutRate': dropout_rate,
@@ -70,7 +71,7 @@ class LSTM(nn.Module):
         rnn_out = self.rnn_wrapper(x, mask)  # (batch, max_seq_len, d_hidden * 2)
         out = rnn_out.sum(dim=1)             # (batch, d_hidden * 2)
         h = self.tanh(self.w_1(out))         # (batch, d_hidden)
-        y = self.w_2(F.dropout(h, p=0.25))   # (batch, n_class)
+        y = self.w_2(self.dropout(h))   # (batch, n_class)
         return y
 
 
@@ -82,7 +83,7 @@ class LSTMAttn(nn.Module):
                  bi_directional: bool = True,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
-                 n_layer: int = 1,
+                 n_layer: int = 2,
                  vocab_size: int = 50002):
         super(LSTMAttn, self).__init__()
         self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
@@ -94,6 +95,7 @@ class LSTMAttn(nn.Module):
         self.w_1 = nn.Linear(d_hidden * 2, d_hidden)
         self.tanh = nn.Tanh()
         self.w_2 = nn.Linear(d_hidden, n_class)
+        self.dropout = nn.Dropout(p=dropout_rate)
 
         self.params = {'BiDirectional': bi_directional,
                        'DropoutRate': dropout_rate,
@@ -105,11 +107,11 @@ class LSTMAttn(nn.Module):
                 mask: torch.Tensor,  # (batch, max_seq_len)
                 ) -> torch.Tensor:   # (batch, n_class)
         rnn_out = self.rnn_wrapper(x, mask)                                  # (batch, max_seq_len, d_hidden * 2)
-        # attn = F.softmax(self.l_attn(rnn_out), dim=1)
+        # alignment_weights = F.softmax(self.attention(rnn_out), dim=1)
         alignment_weights = self.calculate_alignment_weights(rnn_out, mask)  # (batch, max_seq_len, 1)
         out = (alignment_weights * rnn_out).sum(dim=1)                       # (batch, d_hidden * 2)
         h = self.tanh(self.w_1(out))                                         # (batch, d_hidden)
-        y = self.w_2(h)                                                      # (batch, n_class)
+        y = self.w_2(self.dropout(h))                                        # (batch, n_class)
         return y
 
     def calculate_alignment_weights(self,
@@ -117,13 +119,13 @@ class LSTMAttn(nn.Module):
                                     mask: torch.Tensor      # (batch, max_seq_len)
                                     ) -> torch.Tensor:
         max_len = rnn_out.size(1)
-        alignment_weights = self.attention(rnn_out)    # (batch, max_seq_len, 1)
+        alignment_weights = self.attention(rnn_out)  # (batch, max_seq_len, 1)
         alignment_weights_mask = mask.unsqueeze(-1).type(torch.FloatTensor)
         index = alignment_weights.device.index
         if index:  # to gpu
             alignment_weights_mask = alignment_weights_mask.to(torch.device(f'cuda:{index}'))
         alignment_weights.masked_fill_(alignment_weights_mask[:, :max_len, :].ne(1), -1e12)
-        return F.softmax(alignment_weights, dim=1)  # (b, len, 1)
+        return F.softmax(alignment_weights, dim=1)   # (batch, max_seq_len, 1)
 
 
 class CNN(nn.Module):

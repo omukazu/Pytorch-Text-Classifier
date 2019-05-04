@@ -7,7 +7,7 @@ from gensim.models import KeyedVectors
 from sklearn.metrics import f1_score
 import torch
 import torch.nn.functional as F
-from torch.nn import CrossEntropyLoss
+# from torch.nn import CrossEntropyLoss
 
 from data_loader import PNDataLoader
 from classifiers import MLP, LSTM, LSTMAttn, CNN, Transformer

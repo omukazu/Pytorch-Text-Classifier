@@ -12,8 +12,7 @@ class RNNWrapper(nn.Module):
                  embeddings: torch.Tensor or None,
                  rnn: nn.Module,
                  vocab_size: int,
-                 dropout_rate: float = 0.333
-                 ):
+                 dropout_rate: float = 0.333):
         super(RNNWrapper, self).__init__()
         self.embed = nn.Embedding.from_pretrained(embeddings,
                                                   freeze=True) if embeddings is not None \
@@ -24,7 +23,7 @@ class RNNWrapper(nn.Module):
     def forward(self,
                 x: torch.Tensor,
                 mask: torch.Tensor
-                ):
+                ) -> torch.Tensor:
         embedded = self.dropout(self.embed(x))
         lengths = mask.cumsum(dim=1)[:, -1]
         sorted_lengths, perm_indices = lengths.sort(0, descending=True)
@@ -92,8 +91,7 @@ class Embedder(nn.Module):
                  d_emb: int,
                  embeddings: torch.Tensor or None,
                  max_seq_len: int,
-                 vocab_size: int
-                 ):
+                 vocab_size: int):
         super(Embedder, self).__init__()
         self.d_emb = d_emb
         self.max_seq_len = max_seq_len
@@ -114,7 +112,7 @@ class Embedder(nn.Module):
     def create_pe_embeddings(d_emb: int,
                              max_seq_len: int,
                              padding_index: int = 0
-                             ):
+                             ) -> torch.Tensor:
         # (max_seq_len, d_emb), position -> embedding_vector
         pe_embeddings = torch.tensor([[(position - 1) / np.power(10000, 2 * i_emb / d_emb) for i_emb in range(d_emb)]
                                       for position in range(max_seq_len + 1)])
@@ -129,8 +127,7 @@ class MultiHeadAttention(nn.Module):
                  d_emb: int,
                  d_hidden: int,
                  dropout_rate: float,
-                 n_head: int
-                 ):
+                 n_head: int):
         super(MultiHeadAttention, self).__init__()
         self.d_hidden = d_hidden
         self.dropout = nn.Dropout(p=dropout_rate)
@@ -165,8 +162,8 @@ class MultiHeadAttention(nn.Module):
                                      value: torch.Tensor,  # (batch, n_head, max_seq_len, d_hidden)
                                      mask: torch.Tensor,   # (batch, max_seq_len)
                                      scaling_factor: np.float64,
-                                     n_head: int,
-                                     ):
+                                     n_head: int
+                                     ) -> torch.Tensor:
         # (batch, n_head, max_seq_len, max_seq_len)
         alignment_weights = torch.matmul(query, key.transpose(-2, -1)) * scaling_factor
 
@@ -211,8 +208,7 @@ class EncoderLayer(nn.Module):
                  d_emb: int,
                  dropout_rate: float,
                  n_head: int = 8,
-                 scale: int = 4
-                 ):
+                 scale: int = 4):
         super(EncoderLayer, self).__init__()
         self.n_head = n_head
         self.scale = scale
