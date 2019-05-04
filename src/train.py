@@ -6,7 +6,7 @@ from argparse import RawTextHelpFormatter
 import torch
 from tqdm import tqdm
 
-from utils import loss_function, accuracy, f_measure, load_setting, create_save_file_name
+from utils import loss_function, accuracy, f_measure, load_setting, create_save_file_name, create_config
 
 
 def main():
@@ -22,7 +22,10 @@ def main():
     os.makedirs(os.path.dirname(config['arguments']['save_path']), exist_ok=True)
 
     model, device, train_data_loader, valid_data_loader, optimizer = load_setting(config, args)
-    file_name = create_save_file_name(config, model.params)
+    params = model.module.params if len(args.gpu) > 1 else model.params
+    file_name = create_save_file_name(config, params)
+    with open(os.path.join(config['arguments']['save_path'], f'best_{file_name}.config'), "w") as f:
+        json.dump(create_config(config, params), f, indent=4)
 
     best_acc = 0
 

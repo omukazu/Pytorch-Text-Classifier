@@ -13,8 +13,8 @@ class MLP(nn.Module):
                  d_emb: int,
                  d_hidden: int,
                  embeddings: torch.Tensor or None,
-                 n_class: int = 2,
-                 vocab_size: int = 50002):
+                 vocab_size: int,
+                 n_class: int = 2):
         super(MLP, self).__init__()
         self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
         self.embed = nn.Embedding.from_pretrained(embeddings,
@@ -43,11 +43,11 @@ class LSTM(nn.Module):
                  d_emb: int,
                  d_hidden: int,
                  embeddings: torch.Tensor or None,
+                 vocab_size: int,
                  bi_directional: bool = True,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
-                 n_layer: int = 1,
-                 vocab_size: int = 50002):
+                 n_layer: int = 1):
         super(LSTM, self).__init__()
         self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
         self.rnn = nn.LSTM(input_size=d_emb, hidden_size=d_hidden, num_layers=n_layer,
@@ -80,11 +80,11 @@ class LSTMAttn(nn.Module):
                  d_emb: int,
                  d_hidden: int,
                  embeddings: torch.Tensor or None,
+                 vocab_size: int,
                  bi_directional: bool = True,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
-                 n_layer: int = 2,
-                 vocab_size: int = 50002):
+                 n_layer: int = 1):
         super(LSTMAttn, self).__init__()
         self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
         self.rnn = nn.LSTM(input_size=d_emb, hidden_size=d_hidden, num_layers=n_layer,
@@ -122,9 +122,9 @@ class LSTMAttn(nn.Module):
         alignment_weights = self.attention(rnn_out)  # (batch, max_seq_len, 1)
         alignment_weights_mask = mask.unsqueeze(-1).type(torch.FloatTensor)
         index = alignment_weights.device.index
-        if index:  # to gpu
+        if index >= 0:  # to gpu
             alignment_weights_mask = alignment_weights_mask.to(torch.device(f'cuda:{index}'))
-        alignment_weights.masked_fill_(alignment_weights_mask[:, :max_len, :].ne(1), -1e12)
+        alignment_weights.masked_fill_(alignment_weights_mask[:, :max_len, :].ne(1), -1e6)
         return F.softmax(alignment_weights, dim=1)   # (batch, max_seq_len, 1)
 
 
@@ -134,10 +134,10 @@ class CNN(nn.Module):
                  embeddings: torch.Tensor or None,
                  kernel_widths: List[int],
                  max_seq_len: int,
+                 vocab_size: int,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
-                 n_filter: int = 128,
-                 vocab_size: int = 50002):
+                 n_filter: int = 128):
         super(CNN, self).__init__()
         self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
         self.embed = nn.Embedding.from_pretrained(embeddings,
@@ -185,11 +185,11 @@ class Transformer(nn.Module):
     def __init__(self,
                  d_emb: int,
                  embeddings: torch.Tensor or None,
+                 vocab_size: int,
                  dropout_rate: float = 0.333,
                  max_seq_len: int = None,
                  n_class: int = 2,
-                 n_layer: int = 6,
-                 vocab_size: int = 50002):
+                 n_layer: int = 6):
         super(Transformer, self).__init__()
         self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
         self.embedder = Embedder(d_emb, embeddings, max_seq_len, self.vocab_size)
@@ -210,6 +210,6 @@ class Transformer(nn.Module):
         h = self.embedder(x, mask)      # (batch, max_seq_len, d_emb)
         for encoder_layer in self.encoder_layer:
             h = encoder_layer(h, mask)  # (batch, max_seq_len, d_emb)
-        h = h[:, -1, :]                 # extract final feature
+        h = h.sum(dim=1)                # extract final feature
         y = self.fc(self.dropout(h))    # (batch, n_class)
         return y

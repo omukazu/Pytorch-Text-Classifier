@@ -1,5 +1,6 @@
 import os
 import sys
+from collections import OrderedDict
 from typing import Any, Dict, Tuple
 
 import numpy
@@ -75,30 +76,36 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
 
     path = 'debug' if args.debug else 'sentences'
     word_to_id, _ = load_vocabulary(config[path]['vocabulary'])
+    vocab_size = len(word_to_id)
     w2v = KeyedVectors.load_word2vec_format(config[path]['w2v'], binary=True)
     embeddings = ids_to_embeddings(word_to_id, w2v)
 
     if config['arguments']['model_name'] == 'MLP':
         model = MLP(d_emb=config['arguments']['d_emb'],
                     d_hidden=config['arguments']['d_hidden'],
-                    embeddings=embeddings)
+                    embeddings=embeddings,
+                    vocab_size=vocab_size)
     elif config['arguments']['model_name'] == 'LSTM':
         model = LSTM(d_emb=config['arguments']['d_emb'],
                      d_hidden=config['arguments']['d_hidden'],
-                     embeddings=embeddings)
+                     embeddings=embeddings,
+                     vocab_size=vocab_size)
     elif config['arguments']['model_name'] == 'LSTMAttn':
         model = LSTMAttn(d_emb=config['arguments']['d_emb'],
                          d_hidden=config['arguments']['d_hidden'],
-                         embeddings=embeddings)
+                         embeddings=embeddings,
+                         vocab_size=vocab_size)
     elif config['arguments']['model_name'] == 'CNN':
         model = CNN(d_emb=config['arguments']['d_emb'],
                     embeddings=embeddings,
                     kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20],
-                    max_seq_len=config['arguments']['max_seq_len'])
+                    max_seq_len=config['arguments']['max_seq_len'],
+                    vocab_size=vocab_size)
     elif config['arguments']['model_name'] == 'Transformer':
         model = Transformer(d_emb=config['arguments']['d_emb'],
                             embeddings=embeddings,
-                            max_seq_len=config['arguments']['max_seq_len'])
+                            max_seq_len=config['arguments']['max_seq_len'],
+                            vocab_size=vocab_size)
     else:
         print(f'Unknown model name: {config["arguments"]["model_name"]}', file=sys.stderr)
         return
@@ -108,8 +115,9 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
         assert all([int(gpu_number) >= 0 for gpu_number in args.gpu.split(',')]), 'invalid input'
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
         if len(args.gpu) > 1:
-            device = torch.device('cuda')
-            model = torch.nn.DataParallel(model)
+            ids = list(map(int, args.gpu.split(',')))
+            device = torch.device(f'cuda')
+            model = torch.nn.DataParallel(model, device_ids=ids)
         else:
             device = torch.device(f'cuda:{args.gpu}')
     else:
@@ -142,24 +150,29 @@ def load_tester(config: Dict[str, Dict[str, str or int]],
     if config['arguments']['model_name'] == 'MLP':
         model = MLP(d_emb=config['arguments']['d_emb'],
                     d_hidden=config['arguments']['d_hidden'],
-                    embeddings=None)
-    elif config['arguments']['model_name'] == 'BiLSTM':
+                    embeddings=None,
+                    vocab_size=config['arguments']['vocab_size'])
+    elif config['arguments']['model_name'] == 'LSTM':
         model = LSTM(d_emb=config['arguments']['d_emb'],
                      d_hidden=config['arguments']['d_hidden'],
-                     embeddings=None)
-    elif config['arguments']['model_name'] == 'BiLSTMAttn':
+                     embeddings=None,
+                     vocab_size=config['arguments']['vocab_size'])
+    elif config['arguments']['model_name'] == 'LSTMAttn':
         model = LSTMAttn(d_emb=config['arguments']['d_emb'],
                          d_hidden=config['arguments']['d_hidden'],
-                         embeddings=None)
+                         embeddings=None,
+                         vocab_size=config['arguments']['vocab_size'])
     elif config['arguments']['model_name'] == 'CNN':
         model = CNN(d_emb=config['arguments']['d_emb'],
                     embeddings=None,
                     kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20],
-                    max_seq_len=config['arguments']['max_seq_len'])
+                    max_seq_len=config['arguments']['max_seq_len'],
+                    vocab_size=config['arguments']['vocab_size'])
     elif config['arguments']['model_name'] == 'Transformer':
         model = Transformer(d_emb=config['arguments']['d_emb'],
                             embeddings=None,
-                            max_seq_len=config['arguments']['max_seq_len'])
+                            max_seq_len=config['arguments']['max_seq_len'],
+                            vocab_size=config['arguments']['vocab_size'])
     else:
         print(f'Unknown model name: {config["arguments"]["model_name"]}', file=sys.stderr)
         return
@@ -169,8 +182,9 @@ def load_tester(config: Dict[str, Dict[str, str or int]],
         assert all([int(gpu_number) >= 0 for gpu_number in args.gpu.split(',')]), 'invalid input'
         os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
         if len(args.gpu) > 1:
+            ids = list(map(int, args.gpu.split(',')))
             device = torch.device('cuda')
-            model = torch.nn.DataParallel(model, device_ids=args.gpu.split(','))
+            model = torch.nn.DataParallel(model, device_ids=ids)
         else:
             device = torch.device(f'cuda:{args.gpu}')
     else:
@@ -199,3 +213,18 @@ def create_save_file_name(config: Dict[str, Dict[str, str or int]],
     base = f'{d["model_name"]}-d_hidden:{d["d_hidden"]}-max_seq_len:{d["max_seq_len"]}'
     attributes = "-".join([f'{k}:{v}' for k, v in params.items()])
     return base + '-' + attributes
+
+
+def create_config(config: Dict[str, Dict[str, str or int]],
+                  params: Dict[str, Any]
+                  ) -> Dict[str, Dict[str, str or int]]:
+    save_config = OrderedDict()
+    save_config['arguments'] = config['arguments']
+    save_config['test'] = {"vocabulary": "/mnt/larch_f/omura/shinjin/vocab.txt",
+                           "w2v": "/mnt/windroot/share/word2vec/2016.08.02/w2v.midasi.256.100K.bin",
+                           "test": "/mnt/hinoki_f/ueda/shinjin2019/acp-2.0/test.txt"}
+    save_config['debug'] = {"vocabulary": "debug/vocab.txt",
+                            "w2v": "debug/w2v.midasi.256.100K.bin",
+                            "test": "debug/test.txt"}
+    save_config['params'] = params
+    return save_config

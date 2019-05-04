@@ -15,7 +15,7 @@ def main():
                         help='path to config file')
     parser.add_argument('--gpu', '-g', default=None, type=str,
                         help='gpu numbers\nto specify')
-    parser.add_argument('--debug', default=False, action='store_true', type=bool,
+    parser.add_argument('--debug', default=False, action='store_true',
                         help='switch to debug mode')
     args = parser.parse_args()
 

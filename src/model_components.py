@@ -96,7 +96,7 @@ class Embedder(nn.Module):
         self.d_emb = d_emb
         self.max_seq_len = max_seq_len
         self.embeddings = nn.Embedding.from_pretrained(embeddings,
-                                                       freeze=False) if embeddings is not None \
+                                                       freeze=True) if embeddings is not None \
             else nn.Embedding(num_embeddings=vocab_size, embedding_dim=d_emb, padding_idx=0)
         self.positional_encoding = nn.Embedding.from_pretrained(self.create_pe_embeddings(self.d_emb, max_seq_len))
 
@@ -169,12 +169,12 @@ class MultiHeadAttention(nn.Module):
 
         if mask is not None:
             mask = mask.unsqueeze(2).type(torch.FloatTensor)         # (batch, max_seq_len, 1)
-            index = alignment_weights.device.index
-            if index:  # to gpu
-                mask = mask.to(torch.device(f'cuda:{index}'))
             _mask = torch.bmm(mask, mask.transpose(1, 2))            # (batch, max_seq_len, max_seq_len)
             _mask = _mask.unsqueeze(1).expand((-1, n_head, -1, -1))  # (batch, n_head, max_seq_len, max_seq_len)
-            alignment_weights.masked_fill_(_mask.ne(1), -1e12)
+            index = alignment_weights.device.index
+            if index >= 0:  # to gpu
+                _mask = _mask.to(torch.device(f'cuda:{index}'))
+            alignment_weights.masked_fill_(_mask.ne(1), -1e6)
 
         alignment_weights = F.softmax(alignment_weights, dim=-1)
         self_attention = torch.matmul(alignment_weights, value)      # (batch, n_head, max_seq_len, d_hidden)
