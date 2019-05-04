@@ -11,12 +11,13 @@ class RNNWrapper(nn.Module):
                  d_emb: int,
                  embeddings: torch.Tensor or None,
                  rnn: nn.Module,
+                 vocab_size: int,
                  dropout_rate: float = 0.333
                  ):
         super(RNNWrapper, self).__init__()
         self.embed = nn.Embedding.from_pretrained(embeddings,
                                                   freeze=True) if embeddings is not None \
-            else nn.Embedding(num_embeddings=50002, embedding_dim=d_emb, padding_idx=0)
+            else nn.Embedding(num_embeddings=vocab_size, embedding_dim=d_emb, padding_idx=0)
         self.rnn = rnn
         self.dropout = nn.Dropout(p=dropout_rate)
 
@@ -90,18 +91,19 @@ class Embedder(nn.Module):
     def __init__(self,
                  d_emb: int,
                  embeddings: torch.Tensor or None,
-                 max_seq_len: int
+                 max_seq_len: int,
+                 vocab_size: int
                  ):
         super(Embedder, self).__init__()
         self.d_emb = d_emb
         self.max_seq_len = max_seq_len
         self.embeddings = nn.Embedding.from_pretrained(embeddings,
                                                        freeze=False) if embeddings is not None \
-            else nn.Embedding(num_embeddings=50002, embedding_dim=d_emb, padding_idx=0)
+            else nn.Embedding(num_embeddings=vocab_size, embedding_dim=d_emb, padding_idx=0)
         self.positional_encoding = nn.Embedding.from_pretrained(self.create_pe_embeddings(self.d_emb, max_seq_len))
 
     def forward(self,
-                x: torch.Tensor,  # (batch, max_seq_len)
+                x: torch.Tensor,    # (batch, max_seq_len)
                 mask: torch.Tensor  # (batch, max_seq_len)
                 ) -> torch.Tensor:
         # (batch, max_seq_len), mask -> position e.g. (1,1,1,0,0) -> (1,2,3,0,0)
@@ -114,16 +116,11 @@ class Embedder(nn.Module):
                              padding_index: int = 0
                              ):
         # (max_seq_len, d_emb), position -> embedding_vector
-        pe_embeddings = torch.tensor([
-            [(position - 1) / np.power(10000, 2 * i_emb / d_emb) for i_emb in range(d_emb)]
-            for position in range(max_seq_len + 1)
-        ])
+        pe_embeddings = torch.tensor([[(position - 1) / np.power(10000, 2 * i_emb / d_emb) for i_emb in range(d_emb)]
+                                      for position in range(max_seq_len + 1)])
         pe_embeddings[1:, 0::2] = torch.sin(pe_embeddings[1:, 0::2])
         pe_embeddings[1:, 1::2] = torch.cos(pe_embeddings[1:, 1::2])
         pe_embeddings[padding_index] = 0
-        index = pe_embeddings.device.index
-        if index:  # to gpu
-            pe_embeddings = pe_embeddings.to(torch.device(f'cuda:{index}'))
         return pe_embeddings
 
 
@@ -157,7 +154,7 @@ class MultiHeadAttention(nn.Module):
         key = self.w_k(x).contiguous().view(batch, max_seq_len, n_head, d_hidden).transpose(1, 2)
         value = self.w_v(x).contiguous().view(batch, max_seq_len, n_head, d_hidden).transpose(1, 2)
         z = self.scaled_dot_product_attention(query, key, value, mask,
-                                              scaling_factor=np.power(d_hidden, 2), n_head=n_head)
+                                              scaling_factor=1 / np.power(d_hidden, 2), n_head=n_head)
         z = z.transpose(1, 2).contiguous().view(batch, max_seq_len, -1)  # (batch, max_seq_len, n_head * d_hidden)
         z = self.dropout(self.w_o(z))                                    # (batch, max_seq_len, d_emb)
         return self.normalize(x + z)                                     # residual and normalization
@@ -167,14 +164,14 @@ class MultiHeadAttention(nn.Module):
                                      key: torch.Tensor,    # (batch, n_head, max_seq_len, d_hidden)
                                      value: torch.Tensor,  # (batch, n_head, max_seq_len, d_hidden)
                                      mask: torch.Tensor,   # (batch, max_seq_len)
-                                     scaling_factor,
+                                     scaling_factor: np.float64,
                                      n_head: int,
                                      ):
         # (batch, n_head, max_seq_len, max_seq_len)
-        alignment_weights = torch.matmul(query, key.transpose(-2, -1)) / scaling_factor
+        alignment_weights = torch.matmul(query, key.transpose(-2, -1)) * scaling_factor
 
         if mask is not None:
-            mask = mask.unsqueeze(2).type(torch.FloatTensor)  # (batch, max_seq_len, 1)
+            mask = mask.unsqueeze(2).type(torch.FloatTensor)         # (batch, max_seq_len, 1)
             index = alignment_weights.device.index
             if index:  # to gpu
                 mask = mask.to(torch.device(f'cuda:{index}'))

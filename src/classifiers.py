@@ -13,16 +13,18 @@ class MLP(nn.Module):
                  d_emb: int,
                  d_hidden: int,
                  embeddings: torch.Tensor or None,
-                 n_class: int = 2):
+                 n_class: int = 2,
+                 vocab_size: int = 50002):
         super(MLP, self).__init__()
+        self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
         self.embed = nn.Embedding.from_pretrained(embeddings,
                                                   freeze=False) if embeddings is not None \
-            else nn.Embedding(num_embeddings=50002, embedding_dim=d_emb, padding_idx=0)
+            else nn.Embedding(num_embeddings=self.vocab_size, embedding_dim=d_emb, padding_idx=0)
         self.w_1 = nn.Linear(d_emb, d_hidden)
         self.tanh = nn.Tanh()
         self.w_2 = nn.Linear(d_hidden, n_class)
 
-        self.params = {}
+        self.params = {'VocabSize': self.vocab_size}
 
     def forward(self,
                 x: torch.Tensor,    # (batch, max_seq_len, d_emb)
@@ -44,11 +46,13 @@ class LSTM(nn.Module):
                  bi_directional: bool = True,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
-                 n_layer: int = 1):
+                 n_layer: int = 1,
+                 vocab_size: int = 50002):
         super(LSTM, self).__init__()
+        self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
         self.rnn = nn.LSTM(input_size=d_emb, hidden_size=d_hidden, num_layers=n_layer,
                            batch_first=True, dropout=dropout_rate, bidirectional=bi_directional)
-        self.rnn_wrapper = RNNWrapper(d_emb, embeddings, self.rnn)
+        self.rnn_wrapper = RNNWrapper(d_emb, embeddings, self.rnn, self.vocab_size)
 
         self.w_1 = nn.Linear(d_hidden * 2, d_hidden)
         self.tanh = nn.Tanh()
@@ -56,7 +60,8 @@ class LSTM(nn.Module):
 
         self.params = {'BiDirectional': bi_directional,
                        'DropoutRate': dropout_rate,
-                       'NLayer': n_layer}
+                       'NLayer': n_layer,
+                       'VocabSize': self.vocab_size}
 
     def forward(self,
                 x: torch.Tensor,     # (batch, max_seq_len, d_emb)
@@ -73,15 +78,17 @@ class LSTMAttn(nn.Module):
     def __init__(self,
                  d_emb: int,
                  d_hidden: int,
-                 embeddings,
+                 embeddings: torch.Tensor or None,
                  bi_directional: bool = True,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
-                 n_layer: int = 1):
+                 n_layer: int = 1,
+                 vocab_size: int = 50002):
         super(LSTMAttn, self).__init__()
+        self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
         self.rnn = nn.LSTM(input_size=d_emb, hidden_size=d_hidden, num_layers=n_layer,
                            batch_first=True, dropout=dropout_rate, bidirectional=bi_directional)
-        self.rnn_wrapper = RNNWrapper(d_emb, embeddings, self.rnn)
+        self.rnn_wrapper = RNNWrapper(d_emb, embeddings, self.rnn, self.vocab_size)
 
         self.attention = nn.Linear(d_hidden * 2, 1)
         self.w_1 = nn.Linear(d_hidden * 2, d_hidden)
@@ -90,7 +97,8 @@ class LSTMAttn(nn.Module):
 
         self.params = {'BiDirectional': bi_directional,
                        'DropoutRate': dropout_rate,
-                       'NLayer': n_layer}
+                       'NLayer': n_layer,
+                       'VocabSize': self.vocab_size}
 
     def forward(self,
                 x: torch.Tensor,     # (batch, max_seq_len, d_emb)
@@ -121,16 +129,18 @@ class LSTMAttn(nn.Module):
 class CNN(nn.Module):
     def __init__(self,
                  d_emb: int,
-                 embeddings,
+                 embeddings: torch.Tensor or None,
                  kernel_widths: List[int],
                  max_seq_len: int,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
-                 n_filter: int = 128):
+                 n_filter: int = 128,
+                 vocab_size: int = 50002):
         super(CNN, self).__init__()
+        self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
         self.embed = nn.Embedding.from_pretrained(embeddings,
                                                   freeze=False) if embeddings is not None \
-            else nn.Embedding(num_embeddings=50002, embedding_dim=d_emb, padding_idx=0)
+            else nn.Embedding(num_embeddings=self.vocab_size, embedding_dim=d_emb, padding_idx=0)
         assert len(kernel_widths) > 1, 'kernel_widths need at least two elements'
         n_kernel = len(kernel_widths)
         self.poolings = nn.ModuleList([CNNComponent(d_emb=d_emb,
@@ -148,7 +158,8 @@ class CNN(nn.Module):
 
         self.params = {'DropoutRate': dropout_rate,
                        'KernelWidths': ','.join(map(str, kernel_widths)),
-                       'NFilter': n_filter}
+                       'NFilter': n_filter,
+                       'VocabSize': self.vocab_size}
 
     def forward(self,
                 x: torch.Tensor,     # (batch, len, d_emb)
@@ -171,13 +182,15 @@ class CNN(nn.Module):
 class Transformer(nn.Module):
     def __init__(self,
                  d_emb: int,
-                 embeddings,
+                 embeddings: torch.Tensor or None,
                  dropout_rate: float = 0.333,
                  max_seq_len: int = None,
                  n_class: int = 2,
-                 n_layer: int = 6):
+                 n_layer: int = 6,
+                 vocab_size: int = 50002):
         super(Transformer, self).__init__()
-        self.embedder = Embedder(d_emb, embeddings, max_seq_len)
+        self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
+        self.embedder = Embedder(d_emb, embeddings, max_seq_len, self.vocab_size)
         self.encoder_layer = nn.ModuleList([EncoderLayer(d_emb, dropout_rate=dropout_rate) for _ in range(n_layer)])
         self.dropout = nn.Dropout(p=dropout_rate)
         self.fc = nn.Linear(d_emb, n_class)
@@ -185,7 +198,8 @@ class Transformer(nn.Module):
         self.params = {'DropoutRate': dropout_rate,
                        'NHead': self.encoder_layer[0].n_head,
                        'NLayer': n_layer,
-                       'Scale': self.encoder_layer[0].scale}
+                       'Scale': self.encoder_layer[0].scale,
+                       'VocabSize': self.vocab_size}
 
     def forward(self,
                 x: List[np.array],

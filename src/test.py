@@ -1,5 +1,6 @@
 import json
 from argparse import ArgumentParser
+from argparse import RawTextHelpFormatter
 
 import torch
 from tqdm import tqdm
@@ -9,12 +10,12 @@ from utils import loss_function, accuracy, f_measure, load_tester
 
 def main():
     # Testing setting
-    parser = ArgumentParser()
+    parser = ArgumentParser(description='train a classifier', formatter_class=RawTextHelpFormatter)
     parser.add_argument('CONFIG', default=None, type=str,
                         help='path to config file')
     parser.add_argument('--gpu', '-g', default=None, type=str,
-                        help='gpu numbers\n' 'to specify ')
-    parser.add_argument('--debug', default=False, action='store_true',
+                        help='gpu numbers\nto specify')
+    parser.add_argument('--debug', default=False, action='store_true', type=bool,
                         help='switch to debug mode')
     args = parser.parse_args()
 

@@ -78,7 +78,6 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
     w2v = KeyedVectors.load_word2vec_format(config[path]['w2v'], binary=True)
     embeddings = ids_to_embeddings(word_to_id, w2v)
 
-    # build model architecture first
     if config['arguments']['model_name'] == 'MLP':
         model = MLP(d_emb=config['arguments']['d_emb'],
                     d_hidden=config['arguments']['d_hidden'],
