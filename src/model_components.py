@@ -168,12 +168,10 @@ class MultiHeadAttention(nn.Module):
         alignment_weights = torch.matmul(query, key.transpose(-2, -1)) * scaling_factor
 
         if mask is not None:
-            mask = mask.unsqueeze(2).type(torch.FloatTensor)         # (batch, max_seq_len, 1)
+            tensor_type = 'torch.cuda.FloatTensor' if alignment_weights.device.index >= 0 else 'torch.FloatTensor'
+            mask = mask.unsqueeze(2).type(tensor_type)         # (batch, max_seq_len, 1)
             _mask = torch.bmm(mask, mask.transpose(1, 2))            # (batch, max_seq_len, max_seq_len)
             _mask = _mask.unsqueeze(1).expand((-1, n_head, -1, -1))  # (batch, n_head, max_seq_len, max_seq_len)
-            index = alignment_weights.device.index
-            if index >= 0:  # to gpu
-                _mask = _mask.to(torch.device(f'cuda:{index}'))
             alignment_weights.masked_fill_(_mask.ne(1), -1e6)
 
         alignment_weights = F.softmax(alignment_weights, dim=-1)

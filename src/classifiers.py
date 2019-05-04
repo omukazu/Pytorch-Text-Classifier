@@ -120,10 +120,8 @@ class LSTMAttn(nn.Module):
                                     ) -> torch.Tensor:
         max_len = rnn_out.size(1)
         alignment_weights = self.attention(rnn_out)  # (batch, max_seq_len, 1)
-        alignment_weights_mask = mask.unsqueeze(-1).type(torch.FloatTensor)
-        index = alignment_weights.device.index
-        if index >= 0:  # to gpu
-            alignment_weights_mask = alignment_weights_mask.to(torch.device(f'cuda:{index}'))
+        tensor_type = 'torch.cuda.FloatTensor' if alignment_weights.device.index >= 0 else 'torch.FloatTensor'
+        alignment_weights_mask = mask.unsqueeze(-1).type(tensor_type)
         alignment_weights.masked_fill_(alignment_weights_mask[:, :max_len, :].ne(1), -1e6)
         return F.softmax(alignment_weights, dim=1)   # (batch, max_seq_len, 1)
 
@@ -204,12 +202,12 @@ class Transformer(nn.Module):
                        'VocabSize': self.vocab_size}
 
     def forward(self,
-                x: List[np.array],
-                mask: torch.Tensor
+                x: List[np.array],  # (batch, max_seq_len, d_emb)
+                mask: torch.Tensor  # (batch, max_seq_len)
                 ) -> torch.Tensor:
         h = self.embedder(x, mask)      # (batch, max_seq_len, d_emb)
         for encoder_layer in self.encoder_layer:
             h = encoder_layer(h, mask)  # (batch, max_seq_len, d_emb)
-        h = h.sum(dim=1)                # extract final feature
+        h = h.mean(dim=1)               # (batch, d_emb)
         y = self.fc(self.dropout(h))    # (batch, n_class)
         return y
