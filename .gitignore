@@ -1,0 +1,5 @@
+.idea/
+config/
+debug/
+result/
+src/__pycache__
