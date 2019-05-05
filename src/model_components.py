@@ -31,9 +31,9 @@ class RNNWrapper(nn.Module):
 
         # masking
         packed = pack_padded_sequence(embedded[perm_indices], lengths=sorted_lengths, batch_first=True)
-        output, _ = self.rnn(packed)                                                  # (sum(lengths), hid*2)
-        unpacked, _ = pad_packed_sequence(output, batch_first=True, padding_value=0)  # (batch, len, hid * 2)
-        return self.dropout(unpacked[unperm_indices])                                 # (batch, len, hid * 2)
+        output, _ = self.rnn(packed)                   # (sum(lengths), hid*2)
+        unpacked, _ = pad_packed_sequence(output, batch_first=True, padding_value=0)
+        return self.dropout(unpacked[unperm_indices])  # (batch, max_seq_len, d_hidden * 2)
 
 
 # ---for CNN---
@@ -53,9 +53,9 @@ class CNNComponent(nn.Module):
                 x: torch.Tensor,     # (batch, 1, max_seq_len, d_emb)
                 mask: torch.Tensor,  # (batch, max_seq_len)
                 ) -> torch.Tensor:
-        cnn = self.cnn(x)                   # (batch, num_filters, max_seq_len)
-        bn = F.relu(self.bn(cnn))           # (batch, num_filters, max_seq_len)
-        pooled = self.pool(bn).squeeze(-1)  # (batch, num_filters)
+        cnn = self.cnn(x)                   # (batch, n_filter, max_seq_len)
+        bn = F.relu(self.bn(cnn))           # (batch, n_filter, max_seq_len)
+        pooled = self.pool(bn).squeeze(-1)  # (batch, n_filter)
         return pooled
 
 
@@ -168,7 +168,8 @@ class MultiHeadAttention(nn.Module):
         alignment_weights = torch.matmul(query, key.transpose(-2, -1)) * scaling_factor
 
         if mask is not None:
-            tensor_type = 'torch.cuda.FloatTensor' if alignment_weights.device.index >= 0 else 'torch.FloatTensor'
+            tensor_type = 'torch.cuda.FloatTensor' if alignment_weights.device.index is not None \
+                else 'torch.FloatTensor'
             mask = mask.unsqueeze(2).type(tensor_type)         # (batch, max_seq_len, 1)
             _mask = torch.bmm(mask, mask.transpose(1, 2))            # (batch, max_seq_len, max_seq_len)
             _mask = _mask.unsqueeze(1).expand((-1, n_head, -1, -1))  # (batch, n_head, max_seq_len, max_seq_len)

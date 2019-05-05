@@ -33,7 +33,7 @@ class MLP(nn.Module):
         embedded = self.embed(x)
         # (batch, d_emb) / (batch, 1) -> (batch, d_emb)
         x_phrase = torch.sum(embedded, dim=1) / torch.sum(mask, dim=1).unsqueeze(dim=1).float()
-        h = self.tanh(self.w_1(x_phrase))  # (b, hid)
+        h = self.tanh(self.w_1(x_phrase))  # (batch, d_hidden)
         y = self.w_2(h)                    # (batch, n_class)
         return y
 
@@ -71,7 +71,7 @@ class LSTM(nn.Module):
         rnn_out = self.rnn_wrapper(x, mask)  # (batch, max_seq_len, d_hidden * 2)
         out = rnn_out.sum(dim=1)             # (batch, d_hidden * 2)
         h = self.tanh(self.w_1(out))         # (batch, d_hidden)
-        y = self.w_2(self.dropout(h))   # (batch, n_class)
+        y = self.w_2(self.dropout(h))        # (batch, n_class)
         return y
 
 
@@ -106,9 +106,9 @@ class LSTMAttn(nn.Module):
                 x: torch.Tensor,     # (batch, max_seq_len, d_emb)
                 mask: torch.Tensor,  # (batch, max_seq_len)
                 ) -> torch.Tensor:   # (batch, n_class)
-        rnn_out = self.rnn_wrapper(x, mask)                                  # (batch, max_seq_len, d_hidden * 2)
+        rnn_out = self.rnn_wrapper(x, mask)                                  # (batch, seq_len, d_hidden * 2)
         # alignment_weights = F.softmax(self.attention(rnn_out), dim=1)
-        alignment_weights = self.calculate_alignment_weights(rnn_out, mask)  # (batch, max_seq_len, 1)
+        alignment_weights = self.calculate_alignment_weights(rnn_out, mask)  # (batch, seq_len, 1)
         out = (alignment_weights * rnn_out).sum(dim=1)                       # (batch, d_hidden * 2)
         h = self.tanh(self.w_1(out))                                         # (batch, d_hidden)
         y = self.w_2(self.dropout(h))                                        # (batch, n_class)
@@ -119,11 +119,11 @@ class LSTMAttn(nn.Module):
                                     mask: torch.Tensor      # (batch, max_seq_len)
                                     ) -> torch.Tensor:
         max_len = rnn_out.size(1)
-        alignment_weights = self.attention(rnn_out)  # (batch, max_seq_len, 1)
-        tensor_type = 'torch.cuda.FloatTensor' if alignment_weights.device.index >= 0 else 'torch.FloatTensor'
+        alignment_weights = self.attention(rnn_out)  # (batch, seq_len, 1)
+        tensor_type = 'torch.cuda.FloatTensor' if alignment_weights.device.index is not None else 'torch.FloatTensor'
         alignment_weights_mask = mask.unsqueeze(-1).type(tensor_type)
         alignment_weights.masked_fill_(alignment_weights_mask[:, :max_len, :].ne(1), -1e6)
-        return F.softmax(alignment_weights, dim=1)   # (batch, max_seq_len, 1)
+        return F.softmax(alignment_weights, dim=1)   # (batch, seq_len, 1)
 
 
 class CNN(nn.Module):
@@ -192,8 +192,12 @@ class Transformer(nn.Module):
         self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
         self.embedder = Embedder(d_emb, embeddings, max_seq_len, self.vocab_size)
         self.encoder_layer = nn.ModuleList([EncoderLayer(d_emb, dropout_rate=dropout_rate) for _ in range(n_layer)])
+
+        self.self_attention = nn.Linear(d_emb, 1)
+        self.w_1 = nn.Linear(d_emb, d_emb)
+        self.tanh = nn.Tanh()
+        self.w_2 = nn.Linear(d_emb, n_class)
         self.dropout = nn.Dropout(p=dropout_rate)
-        self.fc = nn.Linear(d_emb, n_class)
 
         self.params = {'DropoutRate': dropout_rate,
                        'NHead': self.encoder_layer[0].n_head,
@@ -205,9 +209,22 @@ class Transformer(nn.Module):
                 x: List[np.array],  # (batch, max_seq_len, d_emb)
                 mask: torch.Tensor  # (batch, max_seq_len)
                 ) -> torch.Tensor:
-        h = self.embedder(x, mask)      # (batch, max_seq_len, d_emb)
+        h = self.embedder(x, mask)                                     # (batch, max_seq_len, d_emb)
         for encoder_layer in self.encoder_layer:
-            h = encoder_layer(h, mask)  # (batch, max_seq_len, d_emb)
-        h = h.mean(dim=1)               # (batch, d_emb)
-        y = self.fc(self.dropout(h))    # (batch, n_class)
+            h = encoder_layer(h, mask)                                 # (batch, max_seq_len, d_emb)
+        alignment_weights = self.calculate_alignment_weights(h, mask)  # (batch, max_seq_len, 1)
+        h = (alignment_weights * h).sum(dim=1)                         # (batch, d_hidden)
+        h = self.tanh(self.w_1(h))                                     # (batch, d_hidden)
+        y = self.w_2(self.dropout(h))                                  # (batch, n_class)
         return y
+
+    def calculate_alignment_weights(self,
+                                    x: torch.Tensor,        # (batch, max_seq_len, d_emb)
+                                    mask: torch.Tensor      # (batch, max_seq_len)
+                                    ) -> torch.Tensor:
+        max_len = x.size(1)
+        alignment_weights = self.self_attention(x)  # (batch, max_seq_len, 1)
+        tensor_type = 'torch.cuda.FloatTensor' if alignment_weights.device.index is not None else 'torch.FloatTensor'
+        alignment_weights_mask = mask.unsqueeze(-1).type(tensor_type)
+        alignment_weights.masked_fill_(alignment_weights_mask[:, :max_len, :].ne(1), -1e6)
+        return F.softmax(alignment_weights, dim=1)  # (batch, max_seq_len, 1)

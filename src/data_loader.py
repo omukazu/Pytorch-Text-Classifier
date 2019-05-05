@@ -10,8 +10,7 @@ class PNDataset(Dataset):
     def __init__(self,
                  path: str,
                  word_to_id: Dict[str, int],
-                 max_seq_len: Optional[int],
-                 ) -> None:
+                 max_seq_len: Optional[int]):
         self.word_to_id = word_to_id
         self.max_seq_len = max_seq_len
         self.sources, self.targets = self._load(path)
@@ -64,8 +63,7 @@ class PNDataLoader(DataLoader):
                  max_seq_len: Optional[int],
                  batch_size: int,
                  shuffle: bool,
-                 num_workers: int
-                 ):
+                 num_workers: int):
         self.dataset = PNDataset(path, word_to_id, max_seq_len)
         self.n_samples = len(self.dataset)
         super(PNDataLoader, self).__init__(self.dataset,
