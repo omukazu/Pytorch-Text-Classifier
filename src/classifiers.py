@@ -5,58 +5,57 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from model_components import RNNWrapper, CNNComponent, Embedder, EncoderLayer
+from model_components import Embedder, RNNWrapper, CNNComponent, TransformerEmbedder, EncoderLayer
 
 
 class MLP(nn.Module):
     def __init__(self,
                  d_emb: int,
-                 d_hidden: int,
-                 embeddings: torch.Tensor or None,
-                 vocab_size: int,
+                 d_hid: int,
+                 embeddings: torch.Tensor or int,
                  n_class: int = 2):
         super(MLP, self).__init__()
-        self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
-        self.embed = nn.Embedding.from_pretrained(embeddings,
-                                                  freeze=False) if embeddings is not None \
-            else nn.Embedding(num_embeddings=self.vocab_size, embedding_dim=d_emb, padding_idx=0)
-        self.w_1 = nn.Linear(d_emb, d_hidden)
+        self.vocab_size = embeddings if type(embeddings) is int else embeddings.size(0)
+        self.embed = Embedder(self.vocab_size, d_emb)
+        self.embed.set_initial_embedding(embeddings)
+
+        self.w_1 = nn.Linear(d_emb, d_hid)
         self.tanh = nn.Tanh()
-        self.w_2 = nn.Linear(d_hidden, n_class)
+        self.w_2 = nn.Linear(d_hid, n_class)
 
         self.params = {'VocabSize': self.vocab_size}
 
     def forward(self,
-                x: torch.Tensor,    # (batch, max_seq_len, d_emb)
-                mask: torch.Tensor  # (batch, max_seq_len)
-                ) -> torch.Tensor:  # (batch, n_class)
-        embedded = self.embed(x)
-        # (batch, d_emb) / (batch, 1) -> (batch, d_emb)
+                x: torch.Tensor,    # (b, max_seq_len, d_emb)
+                mask: torch.Tensor  # (b, max_seq_len)
+                ) -> torch.Tensor:  # (b, n_class)
+        embedded = self.embed(x, mask)
+        # (b, d_emb) / (b, 1) -> (b, d_emb)
         x_phrase = torch.sum(embedded, dim=1) / torch.sum(mask, dim=1).unsqueeze(dim=1).float()
-        h = self.tanh(self.w_1(x_phrase))  # (batch, d_hidden)
-        y = self.w_2(h)                    # (batch, n_class)
+        h = self.tanh(self.w_1(x_phrase))  # (b, d_hid)
+        y = self.w_2(h)                    # (b, n_class)
         return y
 
 
 class LSTM(nn.Module):
     def __init__(self,
                  d_emb: int,
-                 d_hidden: int,
-                 embeddings: torch.Tensor or None,
-                 vocab_size: int,
+                 d_hid: int,
+                 embeddings: torch.Tensor or int,
                  bi_directional: bool = True,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
                  n_layer: int = 1):
         super(LSTM, self).__init__()
-        self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
-        self.rnn = nn.LSTM(input_size=d_emb, hidden_size=d_hidden, num_layers=n_layer,
-                           batch_first=True, dropout=dropout_rate, bidirectional=bi_directional)
-        self.rnn_wrapper = RNNWrapper(d_emb, embeddings, self.rnn, self.vocab_size)
+        self.vocab_size = embeddings if type(embeddings) is int else embeddings.size(0)
+        self.embed = Embedder(self.vocab_size, d_emb)
+        self.embed.set_initial_embedding(embeddings)
+        self.rnn = RNNWrapper(nn.LSTM(input_size=d_emb, hidden_size=d_hid, num_layers=n_layer,
+                                      batch_first=True, dropout=dropout_rate, bidirectional=bi_directional))
 
-        self.w_1 = nn.Linear(d_hidden * 2, d_hidden)
+        self.w_1 = nn.Linear(d_hid * 2, d_hid)
         self.tanh = nn.Tanh()
-        self.w_2 = nn.Linear(d_hidden, n_class)
+        self.w_2 = nn.Linear(d_hid, n_class)
         self.dropout = nn.Dropout(p=dropout_rate)
 
         self.params = {'BiDirectional': bi_directional,
@@ -65,36 +64,37 @@ class LSTM(nn.Module):
                        'VocabSize': self.vocab_size}
 
     def forward(self,
-                x: torch.Tensor,     # (batch, max_seq_len, d_emb)
-                mask: torch.Tensor,  # (batch, max_seq_len)
-                ) -> torch.Tensor:   # (batch, n_class)
-        rnn_out = self.rnn_wrapper(x, mask)  # (batch, max_seq_len, d_hidden * 2)
-        out = rnn_out.sum(dim=1)             # (batch, d_hidden * 2)
-        h = self.tanh(self.w_1(out))         # (batch, d_hidden)
-        y = self.w_2(self.dropout(h))        # (batch, n_class)
+                x: torch.Tensor,     # (b, max_seq_len, d_emb)
+                mask: torch.Tensor,  # (b, max_seq_len)
+                ) -> torch.Tensor:   # (b, n_class)
+        embedded = self.embed(x, mask)
+        rnn_out = self.rnn(embedded, mask)  # (b, max_seq_len, d_hid * 2)
+        out = rnn_out.sum(dim=1)            # (b, d_hid * 2)
+        h = self.tanh(self.w_1(out))        # (b, d_hid)
+        y = self.w_2(self.dropout(h))       # (b, n_class)
         return y
 
 
 class LSTMAttn(nn.Module):
     def __init__(self,
                  d_emb: int,
-                 d_hidden: int,
-                 embeddings: torch.Tensor or None,
-                 vocab_size: int,
+                 d_hid: int,
+                 embeddings: torch.Tensor or int,
                  bi_directional: bool = True,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
                  n_layer: int = 1):
         super(LSTMAttn, self).__init__()
-        self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
-        self.rnn = nn.LSTM(input_size=d_emb, hidden_size=d_hidden, num_layers=n_layer,
-                           batch_first=True, dropout=dropout_rate, bidirectional=bi_directional)
-        self.rnn_wrapper = RNNWrapper(d_emb, embeddings, self.rnn, self.vocab_size)
+        self.vocab_size = embeddings if type(embeddings) is int else embeddings.size(0)
+        self.embed = Embedder(self.vocab_size, d_emb)
+        self.embed.set_initial_embedding(embeddings)
+        self.rnn = RNNWrapper(nn.LSTM(input_size=d_emb, hidden_size=d_hid, num_layers=n_layer,
+                                      batch_first=True, dropout=dropout_rate, bidirectional=bi_directional))
 
-        self.attention = nn.Linear(d_hidden * 2, 1)
-        self.w_1 = nn.Linear(d_hidden * 2, d_hidden)
+        self.attention = nn.Linear(d_hid * 2, 1)
+        self.w_1 = nn.Linear(d_hid * 2, d_hid)
         self.tanh = nn.Tanh()
-        self.w_2 = nn.Linear(d_hidden, n_class)
+        self.w_2 = nn.Linear(d_hid, n_class)
         self.dropout = nn.Dropout(p=dropout_rate)
 
         self.params = {'BiDirectional': bi_directional,
@@ -103,44 +103,42 @@ class LSTMAttn(nn.Module):
                        'VocabSize': self.vocab_size}
 
     def forward(self,
-                x: torch.Tensor,     # (batch, max_seq_len, d_emb)
-                mask: torch.Tensor,  # (batch, max_seq_len)
-                ) -> torch.Tensor:   # (batch, n_class)
-        rnn_out = self.rnn_wrapper(x, mask)                                  # (batch, seq_len, d_hidden * 2)
+                x: torch.Tensor,     # (b, max_seq_len, d_emb)
+                mask: torch.Tensor,  # (b, max_seq_len)
+                ) -> torch.Tensor:   # (b, n_class)
+        embedded = self.embed(x, mask)
+        rnn_out = self.rnn(embedded, mask)                                   # (b, seq_len, d_hid * 2)
         # alignment_weights = F.softmax(self.attention(rnn_out), dim=1)
-        alignment_weights = self.calculate_alignment_weights(rnn_out, mask)  # (batch, seq_len, 1)
-        out = (alignment_weights * rnn_out).sum(dim=1)                       # (batch, d_hidden * 2)
-        h = self.tanh(self.w_1(out))                                         # (batch, d_hidden)
-        y = self.w_2(self.dropout(h))                                        # (batch, n_class)
+        alignment_weights = self.calculate_alignment_weights(rnn_out, mask)  # (b, seq_len, 1)
+        out = (alignment_weights * rnn_out).sum(dim=1)                       # (b, d_hid * 2)
+        h = self.tanh(self.w_1(out))                                         # (b, d_hid)
+        y = self.w_2(self.dropout(h))                                        # (b, n_class)
         return y
 
     def calculate_alignment_weights(self,
-                                    rnn_out: torch.Tensor,  # (batch, max_seq_len, d_hidden * 2)
-                                    mask: torch.Tensor      # (batch, max_seq_len)
+                                    rnn_out: torch.Tensor,  # (b, max_seq_len, d_hid * 2)
+                                    mask: torch.Tensor      # (b, max_seq_len)
                                     ) -> torch.Tensor:
         max_len = rnn_out.size(1)
-        alignment_weights = self.attention(rnn_out)  # (batch, seq_len, 1)
-        tensor_type = 'torch.cuda.FloatTensor' if alignment_weights.device.index is not None else 'torch.FloatTensor'
-        alignment_weights_mask = mask.unsqueeze(-1).type(tensor_type)
+        alignment_weights = self.attention(rnn_out)  # (b, seq_len, 1)
+        alignment_weights_mask = mask.unsqueeze(-1).type(alignment_weights.dtype)
         alignment_weights.masked_fill_(alignment_weights_mask[:, :max_len, :].ne(1), -1e6)
-        return F.softmax(alignment_weights, dim=1)   # (batch, seq_len, 1)
+        return F.softmax(alignment_weights, dim=1)   # (b, seq_len, 1)
 
 
 class CNN(nn.Module):
     def __init__(self,
                  d_emb: int,
-                 embeddings: torch.Tensor or None,
+                 embeddings: torch.Tensor or int,
                  kernel_widths: List[int],
                  max_seq_len: int,
-                 vocab_size: int,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
                  n_filter: int = 128):
         super(CNN, self).__init__()
-        self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
-        self.embed = nn.Embedding.from_pretrained(embeddings,
-                                                  freeze=False) if embeddings is not None \
-            else nn.Embedding(num_embeddings=self.vocab_size, embedding_dim=d_emb, padding_idx=0)
+        self.vocab_size = embeddings if type(embeddings) is int else embeddings.size(0)
+        self.embed = Embedder(self.vocab_size, d_emb)
+        self.embed.set_initial_embedding(embeddings)
         assert len(kernel_widths) > 1, 'kernel_widths need at least two elements'
         n_kernel = len(kernel_widths)
         self.poolings = nn.ModuleList([CNNComponent(d_emb=d_emb,
@@ -162,35 +160,35 @@ class CNN(nn.Module):
                        'VocabSize': self.vocab_size}
 
     def forward(self,
-                x: torch.Tensor,     # (batch, len, d_emb)
-                mask: torch.Tensor,  # (batch, len)
+                x: torch.Tensor,     # (b, len, d_emb)
+                mask: torch.Tensor,  # (b, len)
                 ) -> torch.Tensor:
-        embedded = self.embed(x)
-        embedded = embedded.unsqueeze(1)  # (batch, 1, max_seq_len, d_emb)
+        embedded = self.embed(x, mask)
+        embedded = embedded.unsqueeze(1)  # (b, 1, max_seq_len, d_emb)
         pooled = self.poolings[0](embedded, mask)
         for pooling in self.poolings[1:]:
             pooled = torch.cat((pooled, pooling(embedded, mask)), dim=1)
-        pooled = pooled.squeeze(-1)       # (batch, num_filters * n_kernel)
+        pooled = pooled.squeeze(-1)       # (b, num_filters * n_kernel)
 
-        t = self.sigmoid(self.transform_gate(pooled))             # (batch, num_filters * n_kernel)
-        hw = t * F.relu(self.highway(pooled)) + (1 - t) * pooled  # (batch, num_filters * n_kernel)
+        t = self.sigmoid(self.transform_gate(pooled))             # (b, num_filters * n_kernel)
+        hw = t * F.relu(self.highway(pooled)) + (1 - t) * pooled  # (b, num_filters * n_kernel)
 
-        h = self.fc(self.dropout(hw))                             # (batch, n_class)
+        h = self.fc(self.dropout(hw))                             # (b, n_class)
         return h
 
 
 class Transformer(nn.Module):
     def __init__(self,
                  d_emb: int,
-                 embeddings: torch.Tensor or None,
-                 vocab_size: int,
+                 embeddings: torch.Tensor or int,
                  dropout_rate: float = 0.333,
                  max_seq_len: int = None,
                  n_class: int = 2,
                  n_layer: int = 6):
         super(Transformer, self).__init__()
-        self.vocab_size = vocab_size if embeddings is None else embeddings.size(0)
-        self.embedder = Embedder(d_emb, embeddings, max_seq_len, self.vocab_size)
+        self.vocab_size = embeddings if type(embeddings) is int else embeddings.size(0)
+        self.embed = TransformerEmbedder(self.vocab_size, d_emb, max_seq_len)
+        self.embed.set_initial_embedding(embeddings, freeze=False)
         self.encoder_layer = nn.ModuleList([EncoderLayer(d_emb, dropout_rate=dropout_rate) for _ in range(n_layer)])
 
         self.self_attention = nn.Linear(d_emb, 1)
@@ -206,25 +204,24 @@ class Transformer(nn.Module):
                        'VocabSize': self.vocab_size}
 
     def forward(self,
-                x: List[np.array],  # (batch, max_seq_len, d_emb)
-                mask: torch.Tensor  # (batch, max_seq_len)
+                x: List[np.array],  # (b, max_seq_len, d_emb)
+                mask: torch.Tensor  # (b, max_seq_len)
                 ) -> torch.Tensor:
-        h = self.embedder(x, mask)                                     # (batch, max_seq_len, d_emb)
+        h = self.embed(x, mask)                                        # (b, max_seq_len, d_emb)
         for encoder_layer in self.encoder_layer:
-            h = encoder_layer(h, mask)                                 # (batch, max_seq_len, d_emb)
-        alignment_weights = self.calculate_alignment_weights(h, mask)  # (batch, max_seq_len, 1)
-        h = (alignment_weights * h).sum(dim=1)                         # (batch, d_hidden)
-        h = self.tanh(self.w_1(h))                                     # (batch, d_hidden)
-        y = self.w_2(self.dropout(h))                                  # (batch, n_class)
+            h = encoder_layer(h, mask)                                 # (b, max_seq_len, d_emb)
+        alignment_weights = self.calculate_alignment_weights(h, mask)  # (b, max_seq_len, 1)
+        h = (alignment_weights * h).sum(dim=1)                         # (b, d_hid)
+        h = self.tanh(self.w_1(h))                                     # (b, d_hid)
+        y = self.w_2(self.dropout(h))                                  # (b, n_class)
         return y
 
     def calculate_alignment_weights(self,
-                                    x: torch.Tensor,        # (batch, max_seq_len, d_emb)
-                                    mask: torch.Tensor      # (batch, max_seq_len)
+                                    x: torch.Tensor,        # (b, max_seq_len, d_emb)
+                                    mask: torch.Tensor      # (b, max_seq_len)
                                     ) -> torch.Tensor:
         max_len = x.size(1)
-        alignment_weights = self.self_attention(x)  # (batch, max_seq_len, 1)
-        tensor_type = 'torch.cuda.FloatTensor' if alignment_weights.device.index is not None else 'torch.FloatTensor'
-        alignment_weights_mask = mask.unsqueeze(-1).type(tensor_type)
+        alignment_weights = self.self_attention(x)  # (b, max_seq_len, 1)
+        alignment_weights_mask = mask.unsqueeze(-1).type(alignment_weights.dtype)
         alignment_weights.masked_fill_(alignment_weights_mask[:, :max_len, :].ne(1), -1e6)
-        return F.softmax(alignment_weights, dim=1)  # (batch, max_seq_len, 1)
+        return F.softmax(alignment_weights, dim=1)  # (b, max_seq_len, 1)

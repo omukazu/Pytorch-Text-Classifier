@@ -1,12 +1,12 @@
 from typing import Dict, List, Optional, Tuple
 
-import numpy as np
+import torch
 from torch.utils.data import Dataset, DataLoader
 
-PAD = 0
+from constants import PAD
 
 
-class PNDataset(Dataset):
+class MyDataset(Dataset):
     def __init__(self,
                  path: str,
                  word_to_id: Dict[str, int],
@@ -14,21 +14,17 @@ class PNDataset(Dataset):
         self.word_to_id = word_to_id
         self.max_seq_len = max_seq_len
         self.sources, self.targets = self._load(path)
-        self.max_phrase_len: int = self.max_seq_len if self.max_seq_len is not None\
-            else max(len(phrase) for phrase in self.sources)
 
     def __len__(self) -> int:
         return len(self.sources)
 
     def __getitem__(self,
                     idx
-                    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        max_phrase_len = len(self.sources[idx])
-        max_len = self.max_seq_len if self.max_seq_len is not None else self.max_phrase_len
-        pad: List[int] = [PAD] * (max_len - max_phrase_len)
-        source = np.array(self.sources[idx] + pad)
-        mask = np.array([1] * max_phrase_len + [0] * (max_len - max_phrase_len))  # (max_seq_len)
-        target = np.array(self.targets[idx])                                      # (1)
+                    ) -> Tuple[List, List, int]:
+        length = len(self.sources[idx])
+        source = self.sources[idx]
+        mask = [1] * length
+        target = self.targets[idx]
         return source, mask, target
 
     def _load(self,
@@ -56,7 +52,7 @@ class PNDataset(Dataset):
         return sources, targets
 
 
-class PNDataLoader(DataLoader):
+class MyDataLoader(DataLoader):
     def __init__(self,
                  path: str,
                  word_to_id: Dict[str, int],
@@ -64,7 +60,25 @@ class PNDataLoader(DataLoader):
                  batch_size: int,
                  shuffle: bool,
                  num_workers: int):
-        self.dataset = PNDataset(path, word_to_id, max_seq_len)
+        self.dataset = MyDataset(path, word_to_id, max_seq_len)
         self.n_samples = len(self.dataset)
-        super(PNDataLoader, self).__init__(self.dataset,
-                                           batch_size=batch_size, shuffle=shuffle, num_workers=num_workers)
+        super(MyDataLoader, self).__init__(self.dataset,
+                                           batch_size=batch_size,
+                                           shuffle=shuffle,
+                                           num_workers=num_workers,
+                                           collate_fn=my_collate_fn)
+
+
+def my_collate_fn(batch: List[Tuple[List, List, int]]
+                  ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    sources, masks, targets = [], [], []
+    max_seq_len_in_batch = max(len(sample[0]) for sample in batch)
+    for sample in batch:
+        source, mask, target = sample
+        source_length = len(source)
+        source_padding = [PAD] * (max_seq_len_in_batch - source_length)
+        source_mask_padding = [0] * (max_seq_len_in_batch - source_length)
+        sources.append(source+source_padding)
+        masks.append(mask+source_mask_padding)
+        targets.append(target)
+    return torch.LongTensor(sources), torch.LongTensor(masks), torch.LongTensor(targets)

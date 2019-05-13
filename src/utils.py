@@ -8,35 +8,34 @@ from gensim.models import KeyedVectors
 from sklearn.metrics import f1_score
 import torch
 import torch.nn.functional as F
-# from torch.nn import CrossEntropyLoss
 
-from data_loader import PNDataLoader
+from data_loader import MyDataLoader
 from classifiers import MLP, LSTM, LSTMAttn, CNN, Transformer
+from constants import UNK
 from model_components import ScheduledOptimizer
 
 
-def loss_function(output: torch.Tensor,  # (batch, n_class)
-                  target: torch.Tensor,  # (batch)
+def loss_function(output: torch.Tensor,  # (b, n_class)
+                  target: torch.Tensor,  # (b)
                   ) -> torch.Tensor:
-    softmax = F.softmax(output, dim=-1)  # (batch, n_class)
+    softmax = F.softmax(output, dim=-1)  # (b, n_class)
     loss = F.binary_cross_entropy(softmax[:, 1], target.float(), reduction='sum')
     """
         (for document classification)
-        place_holder = CrossEntropyLoss(reduction='sum')
-        loss = place_holder(output, target)
+        loss = F.crossentropy(output, target, reduction='none').sum() / 
     """
     return loss
 
 
-def accuracy(output: torch.Tensor,  # (batch, n_class)
-             target: torch.Tensor   # (batch)
+def accuracy(output: torch.Tensor,  # (b, n_class)
+             target: torch.Tensor   # (b)
              ) -> int:
     prediction = torch.argmax(output, dim=1)
     return (prediction == target).sum().item()
 
 
-def f_measure(output: torch.Tensor,  # (batch, n_class)
-              target: torch.Tensor   # (batch)
+def f_measure(output: torch.Tensor,  # (b, n_class)
+              target: torch.Tensor   # (b)
               ) -> int:
     prediction = torch.argmax(output, dim=1)
     f_score = f1_score(target.cpu(), prediction.cpu(), average='macro')
@@ -46,12 +45,10 @@ def f_measure(output: torch.Tensor,  # (batch, n_class)
 def load_vocabulary(path: str
                     ) -> Tuple[Dict[str, int], Dict[int, str]]:
     with open(path, "r") as f:
-        word_to_id = {f'{key.strip()}': i + 2 for i, key in enumerate(f)}
-        id_to_word = {i + 2: f'{key.strip()}' for i, key in enumerate(f)}
-    word_to_id['<PAD>'] = 0
-    word_to_id['<UNK>'] = 1
-    id_to_word[0] = '<PAD>'
-    id_to_word[1] = '<UNK>'
+        word_to_id = {f'{key.strip()}': i + 1 for i, key in enumerate(f)}
+        id_to_word = {i + 1: f'{key.strip()}' for i, key in enumerate(f)}
+    word_to_id['<UNK>'] = UNK
+    id_to_word[UNK] = '<UNK>'
     return word_to_id, id_to_word
 
 
@@ -82,30 +79,25 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
 
     if config['arguments']['model_name'] == 'MLP':
         model = MLP(d_emb=config['arguments']['d_emb'],
-                    d_hidden=config['arguments']['d_hidden'],
-                    embeddings=embeddings,
-                    vocab_size=vocab_size)
+                    d_hid=config['arguments']['d_hid'],
+                    embeddings=embeddings)
     elif config['arguments']['model_name'] == 'LSTM':
         model = LSTM(d_emb=config['arguments']['d_emb'],
-                     d_hidden=config['arguments']['d_hidden'],
-                     embeddings=embeddings,
-                     vocab_size=vocab_size)
+                     d_hid=config['arguments']['d_hid'],
+                     embeddings=embeddings)
     elif config['arguments']['model_name'] == 'LSTMAttn':
         model = LSTMAttn(d_emb=config['arguments']['d_emb'],
-                         d_hidden=config['arguments']['d_hidden'],
-                         embeddings=embeddings,
-                         vocab_size=vocab_size)
+                         d_hid=config['arguments']['d_hid'],
+                         embeddings=embeddings)
     elif config['arguments']['model_name'] == 'CNN':
         model = CNN(d_emb=config['arguments']['d_emb'],
                     embeddings=embeddings,
                     kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20],
-                    max_seq_len=config['arguments']['max_seq_len'],
-                    vocab_size=vocab_size)
+                    max_seq_len=config['arguments']['max_seq_len'])
     elif config['arguments']['model_name'] == 'Transformer':
         model = Transformer(d_emb=config['arguments']['d_emb'],
                             embeddings=embeddings,
-                            max_seq_len=config['arguments']['max_seq_len'],
-                            vocab_size=vocab_size)
+                            max_seq_len=config['arguments']['max_seq_len'])
     else:
         print(f'Unknown model name: {config["arguments"]["model_name"]}', file=sys.stderr)
         return
@@ -125,9 +117,9 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
     model.to(device)
 
     # setup data_loader instances
-    train_data_loader = PNDataLoader(config[path]['train'], word_to_id, config['arguments']['max_seq_len'],
+    train_data_loader = MyDataLoader(config[path]['train'], word_to_id, config['arguments']['max_seq_len'],
                                      batch_size=config['arguments']['batch_size'], shuffle=True, num_workers=2)
-    valid_data_loader = PNDataLoader(config[path]['valid'], word_to_id, config['arguments']['max_seq_len'],
+    valid_data_loader = MyDataLoader(config[path]['valid'], word_to_id, config['arguments']['max_seq_len'],
                                      batch_size=config['arguments']['batch_size'], shuffle=False, num_workers=2)
 
     # build optimizer
@@ -149,30 +141,25 @@ def load_tester(config: Dict[str, Dict[str, str or int]],
     # build model architecture first
     if config['arguments']['model_name'] == 'MLP':
         model = MLP(d_emb=config['arguments']['d_emb'],
-                    d_hidden=config['arguments']['d_hidden'],
-                    embeddings=None,
-                    vocab_size=config['arguments']['vocab_size'])
+                    d_hid=config['arguments']['d_hid'],
+                    embeddings=config['arguments']['vocab_size'])
     elif config['arguments']['model_name'] == 'LSTM':
         model = LSTM(d_emb=config['arguments']['d_emb'],
-                     d_hidden=config['arguments']['d_hidden'],
-                     embeddings=None,
-                     vocab_size=config['arguments']['vocab_size'])
+                     d_hid=config['arguments']['d_hid'],
+                     embeddings=config['arguments']['vocab_size'])
     elif config['arguments']['model_name'] == 'LSTMAttn':
         model = LSTMAttn(d_emb=config['arguments']['d_emb'],
-                         d_hidden=config['arguments']['d_hidden'],
-                         embeddings=None,
-                         vocab_size=config['arguments']['vocab_size'])
+                         d_hid=config['arguments']['d_hid'],
+                         embeddings=config['arguments']['vocab_size'])
     elif config['arguments']['model_name'] == 'CNN':
         model = CNN(d_emb=config['arguments']['d_emb'],
-                    embeddings=None,
+                    embeddings=config['arguments']['vocab_size'],
                     kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20],
-                    max_seq_len=config['arguments']['max_seq_len'],
-                    vocab_size=config['arguments']['vocab_size'])
+                    max_seq_len=config['arguments']['max_seq_len'])
     elif config['arguments']['model_name'] == 'Transformer':
         model = Transformer(d_emb=config['arguments']['d_emb'],
-                            embeddings=None,
-                            max_seq_len=config['arguments']['max_seq_len'],
-                            vocab_size=config['arguments']['vocab_size'])
+                            embeddings=config['arguments']['vocab_size'],
+                            max_seq_len=config['arguments']['max_seq_len'])
     else:
         print(f'Unknown model name: {config["arguments"]["model_name"]}', file=sys.stderr)
         return
@@ -199,7 +186,7 @@ def load_tester(config: Dict[str, Dict[str, str or int]],
     path = 'debug' if args.debug else 'data'
     word_to_id, _ = load_vocabulary(config[path]['vocabulary'])
 
-    test_data_loader = PNDataLoader(config[path]['test'], word_to_id, config['arguments']['max_seq_len'],
+    test_data_loader = MyDataLoader(config[path]['test'], word_to_id, config['arguments']['max_seq_len'],
                                     batch_size=config['arguments']['batch_size'], shuffle=True, num_workers=2)
 
     # build optimizer
@@ -210,7 +197,7 @@ def create_save_file_name(config: Dict[str, Dict[str, str or int]],
                           params: Dict[str, Any]
                           ) -> str:
     d = config['arguments']
-    base = f'{d["model_name"]}-d_hidden:{d["d_hidden"]}-max_seq_len:{d["max_seq_len"]}'
+    base = f'{d["model_name"]}-d_hid:{d["d_hid"]}-max_seq_len:{d["max_seq_len"]}'
     attributes = "-".join([f'{k}:{v}' for k, v in params.items()])
     return base + '-' + attributes
 

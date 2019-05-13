@@ -4,7 +4,6 @@ from argparse import ArgumentParser
 from argparse import RawTextHelpFormatter
 
 import torch
-from tqdm import tqdm
 
 from utils import loss_function, accuracy, f_measure, load_setting, create_save_file_name, create_config
 
@@ -22,7 +21,7 @@ def main():
     os.makedirs(os.path.dirname(config['arguments']['save_path']), exist_ok=True)
 
     model, device, train_data_loader, valid_data_loader, optimizer = load_setting(config, args)
-    params = model.module.params if len(args.gpu) > 1 else model.params
+    params = model.module.params if args.gpu is not None and len(args.gpu) > 1 else model.params
     file_name = create_save_file_name(config, params)
     with open(os.path.join(config['arguments']['save_path'], f'best_{file_name}.config'), "w") as f:
         json.dump(create_config(config, params), f, indent=4)
@@ -35,7 +34,7 @@ def main():
         model.train()
         total_loss = 0
         total_correct = 0
-        for batch_idx, (source, mask, target) in tqdm(enumerate(train_data_loader)):
+        for batch_idx, (source, mask, target) in enumerate(train_data_loader):
             source = source.to(device)
             mask = mask.to(device)
             target = target.to(device)
@@ -61,7 +60,7 @@ def main():
             total_correct = 0
             total_f_score = 0
             num_iter = 0
-            for batch_idx, (source, mask, target) in tqdm(enumerate(valid_data_loader)):
+            for batch_idx, (source, mask, target) in enumerate(valid_data_loader):
                 source = source.to(device)
                 mask = mask.to(device)
                 target = target.to(device)
