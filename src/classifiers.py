@@ -43,7 +43,6 @@ class CNN(nn.Module):
                  d_emb: int,
                  embeddings: torch.Tensor or int,
                  kernel_widths: List[int],
-                 max_seq_len: int,
                  dropout_rate: float = 0.333,
                  n_class: int = 2,
                  n_filter: int = 128
@@ -51,12 +50,11 @@ class CNN(nn.Module):
         super(CNN, self).__init__()
         self.vocab_size = embeddings if type(embeddings) is int else embeddings.size(0)
         self.embed = Embedder(self.vocab_size, d_emb)
-        self.embed.set_initial_embedding(embeddings, freeze=True)
+        self.embed.set_initial_embedding(embeddings, freeze=False)
         assert len(kernel_widths) > 1, 'kernel_widths need at least two elements'
         n_kernel = len(kernel_widths)
         self.poolers = nn.ModuleList([CNNPooler(d_emb=d_emb,
-                                                kernel_width=kernel_widths[i],
-                                                max_seq_len=max_seq_len)
+                                                kernel_width=kernel_widths[i])
                                       for i in range(n_kernel)])
 
         # highway architecture

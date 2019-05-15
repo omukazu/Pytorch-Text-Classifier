@@ -83,8 +83,7 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
     elif config['arguments']['model_name'] == 'CNN':
         model = CNN(d_emb=config['arguments']['d_emb'],
                     embeddings=embeddings,
-                    kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20],
-                    max_seq_len=config['arguments']['max_seq_len'])
+                    kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20])
     elif config['arguments']['model_name'] == 'LSTM':
         model = LSTM(d_emb=config['arguments']['d_emb'],
                      d_hid=config['arguments']['d_hid'],
@@ -145,8 +144,7 @@ def load_tester(config: Dict[str, Dict[str, str or int]],
     elif config['arguments']['model_name'] == 'CNN':
         model = CNN(d_emb=config['arguments']['d_emb'],
                     embeddings=config['arguments']['vocab_size'],
-                    kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20],
-                    max_seq_len=config['arguments']['max_seq_len'])
+                    kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20])
     elif config['arguments']['model_name'] == 'LSTM':
         model = LSTM(d_emb=config['arguments']['d_emb'],
                      d_hid=config['arguments']['d_hid'],

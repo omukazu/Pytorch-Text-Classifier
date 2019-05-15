@@ -32,6 +32,32 @@ class Embedder(nn.Module):
         self.embed.weight = nn.Parameter(torch.Tensor(initial_weight), requires_grad=(freeze is False))
 
 
+# ---for CNN---
+class CNNPooler(nn.Module):
+    def __init__(self,
+                 d_emb: int,
+                 kernel_width: int,
+                 n_filter: int = 128
+                 ) -> None:
+        super(CNNPooler, self).__init__()
+        self.kernel_width = kernel_width
+        self.n_filter = n_filter
+        self.cnn = nn.Conv2d(in_channels=1, out_channels=n_filter, kernel_size=(kernel_width, d_emb))
+        self.bn = nn.BatchNorm2d(n_filter, 1)
+
+    def forward(self,
+                x: torch.Tensor,     # (b, 1, max_seq_len, d_emb)
+                mask: torch.Tensor,  # (b, max_seq_len)
+                ) -> torch.Tensor:
+        b, _, max_seq_len, _ = x.size()
+        cnn = self.cnn(x)                   # (b, n_filter, max_seq_len - kernel_width + 1, 1)
+        bn = F.relu(self.bn(cnn))           # (b, n_filter, max_seq_len - kernel_width + 1)
+        bn_mask = mask[:, self.kernel_width - 1:].unsqueeze(1).unsqueeze(-1).expand(b, self.n_filter, -1, 1)
+        bn.masked_fill_(bn_mask.ne(1), 0.)
+        pooled = F.max_pool2d(bn, max_seq_len - self.kernel_width + 1).squeeze(-1)  # (b, n_filter)
+        return pooled
+
+
 # ---for RNN---
 class RNNWrapper(nn.Module):
     def __init__(self,
@@ -57,37 +83,6 @@ class RNNWrapper(nn.Module):
         unpacked, _ = pad_packed_sequence(output, batch_first=True, padding_value=0)
         unsorted_output = unpacked.index_select(0, unsorted_indices)
         return self.dropout(unsorted_output)  # (b, max_seq_len, d_hidden * 2)
-
-
-# ---for CNN---
-class CNNPooler(nn.Module):
-    def __init__(self,
-                 d_emb: int,
-                 kernel_width: int,
-                 max_seq_len: int,
-                 n_filter: int = 128
-                 ) -> None:
-        super(CNNPooler, self).__init__()
-        self.kernel_width = kernel_width
-        self.max_seq_len = max_seq_len
-        self.n_filter = n_filter
-        self.cnn = nn.Conv2d(in_channels=1, out_channels=n_filter, kernel_size=(kernel_width, d_emb))
-        self.bn = nn.BatchNorm2d(n_filter, 1)
-        self.pool = nn.MaxPool2d(max_seq_len - kernel_width + 1)
-
-    def forward(self,
-                x: torch.Tensor,     # (b, 1, max_seq_len, d_emb)
-                mask: torch.Tensor,  # (b, max_seq_len)
-                ) -> torch.Tensor:
-        b = x.size(0)
-        cnn = self.cnn(x)                   # (b, n_filter, max_seq_len - kernel_width + 1, 1)
-        bn = F.relu(self.bn(cnn))           # (b, n_filter, max_seq_len - kernel_width + 1)
-        """
-        cnn_mask = mask[:, self.kernel_width - 1:].unsqueeze(1).unsqueeze(-1).expand(b, self.n_filter, -1, 1)
-        bn.masked_fill_(cnn_mask.ne(1), 0.)
-        """
-        pooled = self.pool(bn).squeeze(-1)  # (b, n_filter)
-        return pooled
 
 
 # ---for Transformer---
