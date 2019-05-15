@@ -60,25 +60,32 @@ class RNNWrapper(nn.Module):
 
 
 # ---for CNN---
-class CNNComponent(nn.Module):
+class CNNPooler(nn.Module):
     def __init__(self,
                  d_emb: int,
                  kernel_width: int,
                  max_seq_len: int,
                  n_filter: int = 128
                  ) -> None:
-        super(CNNComponent, self).__init__()
+        super(CNNPooler, self).__init__()
+        self.kernel_width = kernel_width
         self.max_seq_len = max_seq_len
+        self.n_filter = n_filter
         self.cnn = nn.Conv2d(in_channels=1, out_channels=n_filter, kernel_size=(kernel_width, d_emb))
         self.bn = nn.BatchNorm2d(n_filter, 1)
-        self.pool = nn.MaxPool2d(max_seq_len)
+        self.pool = nn.MaxPool2d(max_seq_len - kernel_width + 1)
 
     def forward(self,
                 x: torch.Tensor,     # (b, 1, max_seq_len, d_emb)
                 mask: torch.Tensor,  # (b, max_seq_len)
                 ) -> torch.Tensor:
-        cnn = self.cnn(x)                   # (b, n_filter, max_seq_len)
-        bn = F.relu(self.bn(cnn))           # (b, n_filter, max_seq_len)
+        b = x.size(0)
+        cnn = self.cnn(x)                   # (b, n_filter, max_seq_len - kernel_width + 1, 1)
+        bn = F.relu(self.bn(cnn))           # (b, n_filter, max_seq_len - kernel_width + 1)
+        """
+        cnn_mask = mask[:, self.kernel_width - 1:].unsqueeze(1).unsqueeze(-1).expand(b, self.n_filter, -1, 1)
+        bn.masked_fill_(cnn_mask.ne(1), 0.)
+        """
         pooled = self.pool(bn).squeeze(-1)  # (b, n_filter)
         return pooled
 
@@ -130,7 +137,7 @@ class TransformerEmbedder(nn.Module):
         x = x * mask
         embedded = self.embed(x)
         size = (-1, -1, self.d_emb)
-        # (b, max_seq_len), mask -> position e.g. (1,1,1,0,0) -> (1,2,3,0,0)
+        # (b, max_seq_len), mask -> position e.g. (1,1,1,0,0) -> (0,1,2,0,0)
         position = (mask.cumsum(dim=1) - 1) * mask
         embedded += self.positional_encoding(position)
         mask = mask.unsqueeze(-1).expand(size).type(embedded.dtype)

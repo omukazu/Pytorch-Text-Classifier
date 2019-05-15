@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 
 from data_loader import MyDataLoader
-from classifiers import MLP, LSTM, LSTMAttn, CNN, Transformer
+from classifiers import MLP, LSTM, SelfAttentionLSTM, CNN, TransformerEncoder
 from constants import UNK
 from model_components import ScheduledOptimizer
 
@@ -21,8 +21,8 @@ def loss_function(output: torch.Tensor,  # (b, n_class)
     softmax = F.softmax(output, dim=-1)  # (b, n_class)
     loss = F.binary_cross_entropy(softmax[:, 1], target.float(), reduction='sum')
     """
-        (for document classification)
-        loss = F.crossentropy(output, target, reduction='none').sum() / 
+        # for document classification
+        loss = F.crossentropy(output, target, reduction='none').sum() / b
     """
     return loss
 
@@ -73,7 +73,6 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
 
     path = 'debug' if args.debug else 'sentences'
     word_to_id, _ = load_vocabulary(config[path]['vocabulary'])
-    vocab_size = len(word_to_id)
     w2v = KeyedVectors.load_word2vec_format(config[path]['w2v'], binary=True)
     embeddings = ids_to_embeddings(word_to_id, w2v)
 
@@ -81,23 +80,23 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
         model = MLP(d_emb=config['arguments']['d_emb'],
                     d_hid=config['arguments']['d_hid'],
                     embeddings=embeddings)
-    elif config['arguments']['model_name'] == 'LSTM':
-        model = LSTM(d_emb=config['arguments']['d_emb'],
-                     d_hid=config['arguments']['d_hid'],
-                     embeddings=embeddings)
-    elif config['arguments']['model_name'] == 'LSTMAttn':
-        model = LSTMAttn(d_emb=config['arguments']['d_emb'],
-                         d_hid=config['arguments']['d_hid'],
-                         embeddings=embeddings)
     elif config['arguments']['model_name'] == 'CNN':
         model = CNN(d_emb=config['arguments']['d_emb'],
                     embeddings=embeddings,
                     kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20],
                     max_seq_len=config['arguments']['max_seq_len'])
+    elif config['arguments']['model_name'] == 'LSTM':
+        model = LSTM(d_emb=config['arguments']['d_emb'],
+                     d_hid=config['arguments']['d_hid'],
+                     embeddings=embeddings)
+    elif config['arguments']['model_name'] == 'SALSTM':
+        model = SelfAttentionLSTM(d_emb=config['arguments']['d_emb'],
+                                  d_hid=config['arguments']['d_hid'],
+                                  embeddings=embeddings)
     elif config['arguments']['model_name'] == 'Transformer':
-        model = Transformer(d_emb=config['arguments']['d_emb'],
-                            embeddings=embeddings,
-                            max_seq_len=config['arguments']['max_seq_len'])
+        model = TransformerEncoder(d_emb=config['arguments']['d_emb'],
+                                   embeddings=embeddings,
+                                   max_seq_len=config['arguments']['max_seq_len'])
     else:
         print(f'Unknown model name: {config["arguments"]["model_name"]}', file=sys.stderr)
         return
@@ -143,23 +142,23 @@ def load_tester(config: Dict[str, Dict[str, str or int]],
         model = MLP(d_emb=config['arguments']['d_emb'],
                     d_hid=config['arguments']['d_hid'],
                     embeddings=config['arguments']['vocab_size'])
-    elif config['arguments']['model_name'] == 'LSTM':
-        model = LSTM(d_emb=config['arguments']['d_emb'],
-                     d_hid=config['arguments']['d_hid'],
-                     embeddings=config['arguments']['vocab_size'])
-    elif config['arguments']['model_name'] == 'LSTMAttn':
-        model = LSTMAttn(d_emb=config['arguments']['d_emb'],
-                         d_hid=config['arguments']['d_hid'],
-                         embeddings=config['arguments']['vocab_size'])
     elif config['arguments']['model_name'] == 'CNN':
         model = CNN(d_emb=config['arguments']['d_emb'],
                     embeddings=config['arguments']['vocab_size'],
                     kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20],
                     max_seq_len=config['arguments']['max_seq_len'])
+    elif config['arguments']['model_name'] == 'LSTM':
+        model = LSTM(d_emb=config['arguments']['d_emb'],
+                     d_hid=config['arguments']['d_hid'],
+                     embeddings=config['arguments']['vocab_size'])
+    elif config['arguments']['model_name'] == 'SALSTM':
+        model = SelfAttentionLSTM(d_emb=config['arguments']['d_emb'],
+                                  d_hid=config['arguments']['d_hid'],
+                                  embeddings=config['arguments']['vocab_size'])
     elif config['arguments']['model_name'] == 'Transformer':
-        model = Transformer(d_emb=config['arguments']['d_emb'],
-                            embeddings=config['arguments']['vocab_size'],
-                            max_seq_len=config['arguments']['max_seq_len'])
+        model = TransformerEncoder(d_emb=config['arguments']['d_emb'],
+                                   embeddings=config['arguments']['vocab_size'],
+                                   max_seq_len=config['arguments']['max_seq_len'])
     else:
         print(f'Unknown model name: {config["arguments"]["model_name"]}', file=sys.stderr)
         return
@@ -207,9 +206,9 @@ def create_config(config: Dict[str, Dict[str, str or int]],
                   ) -> Dict[str, Dict[str, str or int]]:
     save_config = OrderedDict()
     save_config['arguments'] = config['arguments']
-    save_config['test'] = {"vocabulary": "/mnt/larch_f/omura/shinjin/vocab.txt",
+    save_config['test'] = {"vocabulary": "/mnt/larch_f//vocab.txt",
                            "w2v": "/mnt/windroot/share/word2vec/2016.08.02/w2v.midasi.256.100K.bin",
-                           "test": "/mnt/hinoki_f/ueda/shinjin2019/acp-2.0/test.txt"}
+                           "test": "/mnt/hinoki_f///test.txt"}
     save_config['debug'] = {"vocabulary": "debug/vocab.txt",
                             "w2v": "debug/w2v.midasi.256.100K.bin",
                             "test": "debug/test.txt"}
