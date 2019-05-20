@@ -3,7 +3,7 @@ from typing import Dict, List, Optional, Tuple
 import torch
 from torch.utils.data import Dataset, DataLoader
 
-from constants import PAD
+from miscellaneous.constants import PAD
 
 
 class MyDataset(Dataset):

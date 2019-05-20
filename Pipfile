@@ -8,14 +8,12 @@ ipython = "*"
 jupyter = "*"
 
 [packages]
-argparse = "*"
 regex = "*"
 pyknp = "*"
 torch = "*"
 gensim = "*"
 paramiko = "*"
 sklearn = "*"
-tqdm = "*"
 
 [requires]
 python_version = "3.6"

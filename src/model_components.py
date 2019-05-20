@@ -19,6 +19,7 @@ class Embedder(nn.Module):
                 mask: torch.Tensor  # (b, max_len)
                 ) -> torch.Tensor:
         x = x * mask
+        from IPython import embed;embed()
         embedded = self.embed(x)
         size = (-1, -1, self.d_emb)
         mask = mask.unsqueeze(-1).expand(size).type(embedded.dtype)
