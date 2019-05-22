@@ -1,5 +1,4 @@
 import os
-import sys
 from collections import OrderedDict
 from typing import Any, Dict, Tuple
 
@@ -14,13 +13,11 @@ from model_components import ScheduledOptimizer
 
 
 def load_vocabulary(path: str
-                    ) -> Tuple[Dict[str, int], Dict[int, str]]:
+                    ) -> Dict[str, int]:
     with open(path, "r") as f:
         word_to_id = {f'{key.strip()}': i + 1 for i, key in enumerate(f)}
-        id_to_word = {i + 1: f'{key.strip()}' for i, key in enumerate(f)}
     word_to_id['<UNK>'] = UNK
-    id_to_word[UNK] = '<UNK>'
-    return word_to_id, id_to_word
+    return word_to_id
 
 
 def ids_to_embeddings(word_to_id: Dict[str, int],
@@ -28,22 +25,20 @@ def ids_to_embeddings(word_to_id: Dict[str, int],
                       ) -> torch.Tensor:
     embeddings = numpy.zeros((len(word_to_id), w2v.vector_size), 'f')  # (vocab_size, d_emb)
     for w, i in word_to_id.items():
-        if w == '<PAD>':
-            pass  # zero vector
-        elif w in w2v.vocab:
+        if w in w2v.vocab:
             embeddings[i] = w2v.word_vec(w)
         else:
-            embeddings[i] = w2v.word_vec('<UNK>')
+            embeddings[i] = w2v.word_vec('<UNK>') / i
     return torch.tensor(embeddings)
 
 
 def load_setting(config: Dict[str, Dict[str, str or int]],
                  args  # argparse.Namespace
-                 ):
+                 ) -> Tuple[Any, Any, Any, Any, Any]:
     torch.manual_seed(config["arguments"]["seed"])
 
-    path = "debug" if args.debug else "sentences"
-    word_to_id, _ = load_vocabulary(config[path]["vocabulary"])
+    path = "debug" if args.debug else "documents"
+    word_to_id = load_vocabulary(config[path]["vocabulary"])
     w2v = KeyedVectors.load_word2vec_format(config[path]["w2v"], binary=True)
     embeddings = ids_to_embeddings(word_to_id, w2v)
     config["arguments"]["vocab_size"] = len(embeddings)
@@ -51,18 +46,20 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
     if config["arguments"]["model_name"] == "CNN":
         model = CNN(d_emb=config["arguments"]["d_emb"],
                     embeddings=embeddings,
-                    kernel_widths=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20])
+                    kernel_widths=[1, 3, 5],
+                    n_class=config["arguments"]["n_class"])
     elif config["arguments"]["model_name"] == "LSTM":
         model = SelfAttentionLSTM(d_emb=config["arguments"]["d_emb"],
                                   d_hid=config["arguments"]["d_hid"],
-                                  embeddings=embeddings)
+                                  embeddings=embeddings,
+                                  n_class=config["arguments"]["n_class"])
     elif config["arguments"]["model_name"] == "Transformer":
         model = TransformerEncoder(d_emb=config["arguments"]["d_emb"],
                                    embeddings=embeddings,
-                                   max_seq_len=config["arguments"]["max_seq_len"])
+                                   max_seq_len=config["arguments"]["max_seq_len"],
+                                   n_class=config["arguments"]["n_class"])
     else:
-        print(f'Unknown model name: {config["arguments"]["model_name"]}', file=sys.stderr)
-        return
+        raise KeyError(f'Unknown model name: {config["arguments"]["model_name"]}')
 
     # setup device
     if args.gpu and torch.cuda.is_available():
@@ -73,9 +70,11 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
     model.to(device)
 
     # setup data_loader instances
-    train_data_loader = MyDataLoader(config[path]["train"], word_to_id, config["arguments"]["max_seq_len"],
+    train_data_loader = MyDataLoader(config[path]["train"], config[path]["labels"], config["arguments"]["delimiter"],
+                                     word_to_id, config["arguments"]["max_seq_len"],
                                      batch_size=config["arguments"]["batch_size"], shuffle=True, num_workers=2)
-    valid_data_loader = MyDataLoader(config[path]["valid"], word_to_id, config["arguments"]["max_seq_len"],
+    valid_data_loader = MyDataLoader(config[path]["valid"], config[path]["labels"], config["arguments"]["delimiter"],
+                                     word_to_id, config["arguments"]["max_seq_len"],
                                      batch_size=config["arguments"]["batch_size"], shuffle=False, num_workers=2)
 
     # build optimizer
@@ -93,23 +92,25 @@ def load_setting(config: Dict[str, Dict[str, str or int]],
 
 def load_tester(config: Dict[str, Dict[str, str or int]],
                 args  # argparse.Namespace
-                ):
+                ) -> Tuple[Any, Any, Any]:
     # build model architecture first
     if config["arguments"]["model_name"] == "CNN":
         model = CNN(d_emb=config["arguments"]["d_emb"],
                     embeddings=config["arguments"]["vocab_size"],
-                    kernel_widths=config["params"]["KernelWidths"])
+                    kernel_widths=config["params"]["KernelWidths"],
+                    n_class=config["arguments"]["n_class"])
     elif config["arguments"]["model_name"] == "LSTM":
         model = SelfAttentionLSTM(d_emb=config["arguments"]["d_emb"],
                                   d_hid=config["arguments"]["d_hid"],
-                                  embeddings=config["arguments"]["vocab_size"])
+                                  embeddings=config["arguments"]["vocab_size"],
+                                  n_class=config["arguments"]["n_class"])
     elif config["arguments"]["model_name"] == "Transformer":
         model = TransformerEncoder(d_emb=config["arguments"]["d_emb"],
                                    embeddings=config["arguments"]["vocab_size"],
-                                   max_seq_len=config["arguments"]["max_seq_len"])
+                                   max_seq_len=config["arguments"]["max_seq_len"],
+                                   n_class=config["arguments"]["n_class"])
     else:
-        print(f'Unknown model name: {config["arguments"]["model_name"]}', file=sys.stderr)
-        return
+        raise KeyError(f'Unknown model name: {config["arguments"]["model_name"]}')
 
     # setup device
     if args.gpu and torch.cuda.is_available():
@@ -124,10 +125,11 @@ def load_tester(config: Dict[str, Dict[str, str or int]],
     model.to(device)
 
     # setup data_loader instances
-    path = "debug" if args.debug else "sentences"
-    word_to_id, _ = load_vocabulary(config[path]["vocabulary"])
+    path = "debug" if args.debug else "documents"
+    word_to_id = load_vocabulary(config[path]["vocabulary"])
 
-    test_data_loader = MyDataLoader(config[path]["test"], word_to_id, config["arguments"]["max_seq_len"],
+    test_data_loader = MyDataLoader(config[path]["test"], config[path]["labels"], config["arguments"]["delimiter"],
+                                    word_to_id, config["arguments"]["max_seq_len"],
                                     batch_size=config["arguments"]["batch_size"], shuffle=True, num_workers=2)
 
     # build optimizer
@@ -148,10 +150,12 @@ def create_config(config: Dict[str, Dict[str, str or int]],
                   ) -> Dict[str, Dict[str, str or int]]:
     save_config = OrderedDict()
     save_config["arguments"] = config["arguments"]
-    save_config["sentences"] = {"vocabulary": config["sentences"]["vocabulary"],
-                                "w2v": config["sentences"]["w2v"],
-                                "test": config["sentences"]["test"]}
-    save_config["debug"] = {"vocabulary": config["debug"]["vocabulary"],
+    save_config["documents"] = {"labels": config["documents"]["labels"],
+                                "vocabulary": config["documents"]["vocabulary"],
+                                "w2v": config["documents"]["w2v"],
+                                "test": config["documents"]["test"]}
+    save_config["debug"] = {"labels": config["documents"]["labels"],
+                            "vocabulary": config["debug"]["vocabulary"],
                             "w2v": config["debug"]["w2v"],
                             "test": config["debug"]["test"]}
     save_config["params"] = params

@@ -9,17 +9,20 @@ from miscellaneous.constants import PAD
 class MyDataset(Dataset):
     def __init__(self,
                  path: str,
+                 labels: List[str],
+                 delimiter: str,
                  word_to_id: Dict[str, int],
-                 max_seq_len: Optional[int]):
+                 max_seq_len: Optional[int]
+                 ) -> None:
         self.word_to_id = word_to_id
         self.max_seq_len = max_seq_len
-        self.sources, self.targets = self._load(path)
+        self.sources, self.targets = self._load(path, labels, delimiter)
 
     def __len__(self) -> int:
         return len(self.sources)
 
     def __getitem__(self,
-                    idx
+                    idx: int
                     ) -> Tuple[List, List, int]:
         length = len(self.sources[idx])
         source = self.sources[idx]
@@ -29,16 +32,15 @@ class MyDataset(Dataset):
 
     def _load(self,
               path: str,
-              delimiter: str = '\t'
+              labels: List[str],
+              delimiter: str,
               ) -> Tuple[List[List[int]], List[int]]:
         sources, targets = [], []
-        # tags = ['0', '1', '2', '3']
-        tags = ['-1', '1']
         with open(path) as f:
             for line in f:
-                tag, body = line.strip().split(delimiter)
-                assert tag in tags
-                targets.append(tags.index(tag))
+                label, body = line.strip().split(delimiter)
+                assert label in labels
+                targets.append(labels.index(label))
                 ids: List[int] = []
                 for mrph in body.split():
                     if mrph in self.word_to_id.keys():
@@ -55,13 +57,16 @@ class MyDataset(Dataset):
 class MyDataLoader(DataLoader):
     def __init__(self,
                  path: str,
+                 labels: List[str],
+                 delimiter: str,
                  word_to_id: Dict[str, int],
                  max_seq_len: Optional[int],
                  batch_size: int,
                  shuffle: bool,
-                 num_workers: int):
-        self.dataset = MyDataset(path, word_to_id, max_seq_len)
-        self.n_samples = len(self.dataset)
+                 num_workers: int
+                 ) -> None:
+        self.dataset = MyDataset(path, labels, delimiter, word_to_id, max_seq_len)
+        self.n_sample = len(self.dataset)
         super(MyDataLoader, self).__init__(self.dataset,
                                            batch_size=batch_size,
                                            shuffle=shuffle,

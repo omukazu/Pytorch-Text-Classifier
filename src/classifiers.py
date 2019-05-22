@@ -13,8 +13,8 @@ class CNN(nn.Module):
                  d_emb: int,
                  embeddings: torch.Tensor or int,
                  kernel_widths: List[int],
+                 n_class: int,
                  dropout_rate: float = 0.333,
-                 n_class: int = 2,
                  n_filter: int = 128
                  ) -> None:
         super(CNN, self).__init__()
@@ -64,9 +64,9 @@ class SelfAttentionLSTM(nn.Module):
                  d_emb: int,
                  d_hid: int,
                  embeddings: torch.Tensor or int,
+                 n_class: int,
                  bi_directional: bool = True,
                  dropout_rate: float = 0.333,
-                 n_class: int = 2,
                  n_layer: int = 1
                  ) -> None:
         super(SelfAttentionLSTM, self).__init__()
@@ -94,7 +94,6 @@ class SelfAttentionLSTM(nn.Module):
                 ) -> torch.Tensor:   # (b, n_class)
         embedded = self.embed(x, mask)
         rnn_out = self.rnn(embedded, mask)                                   # (b, seq_len, d_hid * 2)
-        # alignment_weights = F.softmax(self.attention(rnn_out), dim=1)
         alignment_weights = self.calculate_alignment_weights(rnn_out, mask)  # (b, seq_len, 1)
         out = (alignment_weights * rnn_out).sum(dim=1)                       # (b, d_hid * 2)
         h = self.tanh(self.w_1(out))                                         # (b, d_hid)
@@ -116,9 +115,9 @@ class TransformerEncoder(nn.Module):
     def __init__(self,
                  d_emb: int,
                  embeddings: torch.Tensor or int,
+                 n_class: int,
                  dropout_rate: float = 0.333,
                  max_seq_len: int = None,
-                 n_class: int = 2,
                  n_layer: int = 6
                  ) -> None:
         super(TransformerEncoder, self).__init__()

@@ -28,7 +28,6 @@ def main():
         total_loss = 0
         total_accuracy = 0
         total_f_score = 0
-        num_iter = 0
         for batch_idx, (source, mask, target) in enumerate(test_data_loader):
             source = source.to(device)
             mask = mask.to(device)
@@ -39,10 +38,10 @@ def main():
             total_loss += loss_function(output, target)
             total_accuracy += accuracy(output, target)
             total_f_score += f_measure(output, target)
-            num_iter = batch_idx + 1
-    print(f'test_loss={total_loss / test_data_loader.n_samples:.3f}', end=' ')
-    print(f'test_accuracy={total_accuracy / test_data_loader.n_samples:.3f}', end=' ')
-    print(f'test_f_score={total_f_score / num_iter:.3f}\n')
+        else:
+            print(f'test_loss={total_loss / test_data_loader.n_samples:.3f}', end=' ')
+            print(f'test_accuracy={total_accuracy / test_data_loader.n_samples:.3f}', end=' ')
+            print(f'test_f_score={total_f_score / (batch_idx + 1):.3f}\n')
 
 
 if __name__ == '__main__':

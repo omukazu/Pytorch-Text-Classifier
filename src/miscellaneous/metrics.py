@@ -6,12 +6,8 @@ from sklearn.metrics import f1_score
 def loss_function(output: torch.Tensor,  # (b, n_class)
                   target: torch.Tensor,  # (b)
                   ) -> torch.Tensor:
-    softmax = F.softmax(output, dim=-1)  # (b, n_class)
-    loss = F.binary_cross_entropy(softmax[:, 1], target.float(), reduction='sum')
-    """
-        # for document classification
-        loss = F.crossentropy(output, target, reduction='none').sum() / b
-    """
+    b = output.size(0)
+    loss = F.cross_entropy(output, target, reduction='none').sum() / b
     return loss
 
 

@@ -50,8 +50,9 @@ def main():
 
             total_loss += loss.item()
             total_accuracy += accuracy(output, target)
-        print(f'train_loss={total_loss / train_data_loader.n_samples:.3f}', end=' ')
-        print(f'train_accuracy={total_accuracy / train_data_loader.n_samples:.3f}')
+        else:
+            print(f'train_loss={total_loss / (batch_idx + 1):.3f}', end=' ')
+            print(f'train_accuracy={total_accuracy / train_data_loader.n_sample:.3f}')
 
         # validation
         model.eval()
@@ -59,7 +60,6 @@ def main():
             total_loss = 0
             total_accuracy = 0
             total_f_score = 0
-            num_iter = 0
             for batch_idx, (source, mask, target) in enumerate(valid_data_loader):
                 source = source.to(device)
                 mask = mask.to(device)
@@ -70,12 +70,12 @@ def main():
                 total_loss += loss_function(output, target)
                 total_accuracy += accuracy(output, target)
                 total_f_score += f_measure(output, target)
-                num_iter = batch_idx + 1
-        valid_acc = total_accuracy / valid_data_loader.n_samples
-        valid_f_score = total_f_score / num_iter
-        print(f'valid_loss={total_loss / valid_data_loader.n_samples:.3f}', end=' ')
-        print(f'valid_accuracy={valid_acc:.3f}', end=' ')
-        print(f'valid_f_score={valid_f_score:.3f}\n')
+            else:
+                valid_acc = total_accuracy / valid_data_loader.n_sample
+                valid_f_score = total_f_score / (batch_idx + 1)
+                print(f'valid_loss={total_loss / (batch_idx + 1):.3f}', end=' ')
+                print(f'valid_accuracy={valid_acc:.3f}', end=' ')
+                print(f'valid_f_score={valid_f_score:.3f}\n')
         if valid_acc > best_acc:
             torch.save(model.state_dict(),
                        os.path.join(config["arguments"]["save_path"], f'best_{file_name}.pth'))

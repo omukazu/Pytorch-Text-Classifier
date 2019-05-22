@@ -19,7 +19,6 @@ class Embedder(nn.Module):
                 mask: torch.Tensor  # (b, max_len)
                 ) -> torch.Tensor:
         x = x * mask
-        from IPython import embed;embed()
         embedded = self.embed(x)
         size = (-1, -1, self.d_emb)
         mask = mask.unsqueeze(-1).expand(size).type(embedded.dtype)
@@ -53,8 +52,6 @@ class CNNPooler(nn.Module):
         b, _, max_seq_len, _ = x.size()
         cnn = self.cnn(x)                   # (b, n_filter, max_seq_len - kernel_width + 1, 1)
         bn = F.relu(self.bn(cnn))           # (b, n_filter, max_seq_len - kernel_width + 1)
-        bn_mask = mask[:, self.kernel_width - 1:].unsqueeze(1).unsqueeze(-1).expand(b, self.n_filter, -1, 1)
-        bn.masked_fill_(bn_mask.ne(1), 0.)
         pooled = F.max_pool2d(bn, max_seq_len - self.kernel_width + 1).squeeze(-1)  # (b, n_filter)
         return pooled
 
