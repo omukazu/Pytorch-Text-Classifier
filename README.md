@@ -23,18 +23,19 @@ The following models are available.
 
 1. CNN
 
-![CNN](https://github.com/omukazu/Pytorch-Text-Classifier/blob/images/image/CNN.pdf)
+![CNN](https://github.com/omukazu/Pytorch-Text-Classifier/blob/images/image/CNN.png)
 
 2. BiLSTM with self-attention mechanism
 
-![LSTM](https://github.com/omukazu/Pytorch-Text-Classifier/blob/images/image/LSTM.pdf)
+![LSTM](https://github.com/omukazu/Pytorch-Text-Classifier/blob/images/image/LSTM.png)
 
 3. The encoder part of Transformer
 
-![Transformer](https://github.com/omukazu/Pytorch-Text-Classifier/blob/images/image/Transformer.pdf)
+![Transformer](https://github.com/omukazu/Pytorch-Text-Classifier/blob/images/image/Transformer.png)
 
 ## Train
-You have to create a config file in advance, referring to config/sample.json
+You have to create a config file in advance, referring to config/sample.json.
+
 And then run the following command.
 ```
 $ python src/train.py config/my_config.json [**kwargs]

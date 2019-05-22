@@ -1,0 +1,34 @@
+{
+  "arguments":
+  {
+    "batch_size": 128,
+    "d_emb": 256,
+    "d_hid": 128,
+    "delimiter": ",",
+    "epoch": 100,
+    "learning_rate": 5e-3,
+    "max_seq_len": null,
+    "model_name": "CNN",
+    "n_class": 4,
+    "save_path": "./result",
+    "seed": 1
+  },
+  "documents":
+  {
+    "labels": ["0", "1", "2", "3"],
+    "vocabulary": "data/vocab.txt",
+    "w2v": "data/w2v.bin",
+    "train": "data/train.csv",
+    "valid": "data/valid.csv",
+    "test": "data/test.csv"
+  },
+  "debug":
+  {
+    "labels": ["0", "1", "2", "3"],
+    "vocabulary": "debug/vocab.txt",
+    "w2v": "debug/w2v.bin",
+    "train": "debug/train.csv",
+    "valid": "debug/test.csv",
+    "test": "debug/test.csv"
+  }
+}

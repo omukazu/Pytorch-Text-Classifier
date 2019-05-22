@@ -1,5 +1,5 @@
 .idea/
-config/
+config/config.json
 debug/
 result/
 src/__pycache__
